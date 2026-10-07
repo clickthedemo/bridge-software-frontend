@@ -1,11 +1,13 @@
-import { EngagementDashboard } from "@/components/Engagement";
+import { ContactRequestInbox } from "@/components/M4ContactRequests";
+import { NotificationList } from "@/components/M4Notifications";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import { isPhase3LiveApi } from "@/lib/phase3";
 import Link from "next/link";
 
 const metrics = [["Profile views", "184", "+18%"], ["Search appearances", "726", "+9%"], ["Contact requests", "12", "+3"], ["Saved by members", "31", "+6"]];
 
 export default function DashboardPage() {
-  if (isPhase3LiveApi()) return <EngagementDashboard />;
+  if (isPhase3LiveApi()) return <RequireAuth><main className="page shell"><header className="page-heading"><p className="eyebrow">Your Bridge</p><h1>Keep your connections close</h1><div className="button-row"><Link className="button secondary" href="/my-profile">Manage your profile</Link><Link className="button secondary" href="/requests">Contact requests</Link><Link className="button secondary" href="/notifications">All notifications</Link></div></header><div className="form-stack"><section><h2>Business contact requests</h2><ContactRequestInbox /></section><section><h2>Notifications</h2><NotificationList /></section></div></main></RequireAuth>;
   return (
     <section className="page shell">
       <div className="dashboard-heading"><div><p className="eyebrow">Brand dashboard</p><h1>Good morning, Tori.</h1><p className="lede">Here is what is happening around your profile. All metrics and requests below are fictional sample data.</p></div><button className="button secondary" disabled title="Profile editing opens in the post-decision build" type="button">Edit profile</button></div>

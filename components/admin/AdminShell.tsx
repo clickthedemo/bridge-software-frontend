@@ -9,6 +9,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 const navigation = [
   { href: "/admin/dashboard", label: "Dashboard", icon: "▦" },
   { href: "/admin/verification", label: "Verification", icon: "✓" },
+  { href: "/admin/directory-profiles", label: "Directory profiles", icon: "D" },
   { href: "/admin/users", label: "Users", icon: "+" },
   { href: "/admin/settings", label: "Settings", icon: "⚙", exact: true },
   { href: "/admin/settings/password", label: "Password", icon: "◇" },
@@ -52,6 +53,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           const active = pathname === item.href || (!item.exact && pathname.startsWith(`${item.href}/`));
           return <Link aria-current={active ? "page" : undefined} href={item.href} key={item.href} onClick={() => setIsOpen(false)}><span aria-hidden="true" className="admin-nav-icon">{item.icon}</span><span>{item.label}</span></Link>;
         })}
+        <p className="admin-nav-section">WEBSITE</p>
+        <Link href="/" onClick={() => setIsOpen(false)}><span aria-hidden="true" className="admin-nav-icon">←</span><span>Back to website</span></Link>
       </nav>
       <div className="admin-sidebar-account">
         <div className="admin-account-avatar">{displayName.charAt(0).toUpperCase()}</div>

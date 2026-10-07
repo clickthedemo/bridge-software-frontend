@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { emptyPostModeValues, isPostModeValid, type PostModeId, type PostModeValues } from "@/lib/phase3/post-modes";
-import { PostComposer } from "@/components/Engagement";
 import { PostModeFields } from "@/components/PostModeFields";
 import { PostModePicker } from "@/components/PostModePicker";
 import {
@@ -31,7 +30,7 @@ type PublishStatus = "idle" | "pending" | "success" | "error";
 type SessionStatus = "loading" | "ready" | "error";
 type UploadStatus = "idle" | "pending" | "accepted" | "error";
 
-export function CreateClient() { return isPhase3LiveApi() ? <PostComposer /> : <><p className="boundary-note">Preview mode · sample promotion tools</p><PreviewCreateClient /></>; }
+export function CreateClient() { return isPhase3LiveApi() ? <section className="content-card"><p className="eyebrow">Posting unavailable</p><h2>News and announcements are not connected yet</h2><p>The current backend does not provide a supported posts endpoint. Bridge will not send requests to the retired engagement API or pretend that a post was saved.</p></section> : <><p className="boundary-note">Preview mode · sample promotion tools</p><PreviewCreateClient /></>; }
 function PreviewCreateClient() {
   const client = useMemo(() => getPhase3Client(), []);
   const [claims, setClaims] = useState<SessionClaims | null>(null);

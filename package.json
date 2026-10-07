@@ -16,7 +16,7 @@
     "build:staging:botanical": "node scripts/build-staging-one.mjs botanical",
     "test:staging": "node scripts/verify-staging.mjs",
     "test:phase3": "node --test --experimental-strip-types lib/phase3/phase3.test.ts lib/direction-lock.test.ts lib/age-gate.test.ts lib/onboarding/roles.test.ts",
-    "test:integration": "node --test --experimental-strip-types lib/phase3/phase3.test.ts lib/phase3/post-modes.test.ts lib/phase3/organizations.test.ts lib/direction-lock.test.ts lib/age-gate.test.ts lib/onboarding/roles.test.ts lib/safe-next.test.ts components/auth/auth-provider.test.mjs lib/search.test.ts lib/contact.test.ts lib/phase3/mock-recovery.test.ts lib/phase3/verification-queue.test.ts lib/phase3/directory.test.ts lib/phase3/engagement.test.ts lib/phase3/directory-requests.test.ts"
+    "test:integration": "node --test --experimental-strip-types lib/phase3/phase3.test.ts lib/phase3/post-modes.test.ts lib/phase3/organizations.test.ts lib/direction-lock.test.ts lib/age-gate.test.ts lib/onboarding/roles.test.ts lib/safe-next.test.ts components/auth/auth-provider.test.mjs lib/search.test.ts lib/contact.test.ts lib/phase3/mock-recovery.test.ts lib/phase3/verification-queue.test.ts lib/phase3/directory.test.ts lib/phase3/directory-requests.test.ts"
   },
   "dependencies": {
     "next": "16.3.1",

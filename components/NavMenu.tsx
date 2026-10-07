@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { NotificationBell } from "@/components/M4Notifications";
 
 const links = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
@@ -70,6 +71,8 @@ export function NavMenu() {
           </Link>
         ))}
         {status === "unauthenticated" && <Link aria-current={pathname === "/login" || pathname.startsWith("/auth/") ? "page" : undefined} href="/login" onClick={() => setOpen(false)}>Sign in</Link>}
+        {status === "authenticated" && <NotificationBell />}
+        {status === "authenticated" && <Link aria-current={pathname.startsWith("/requests") ? "page" : undefined} href="/requests" onClick={() => setOpen(false)}>Requests</Link>}
         {status === "authenticated" && isAdmin && <Link aria-current={pathname.startsWith("/admin") ? "page" : undefined} href="/admin/dashboard" onClick={() => setOpen(false)}>Admin dashboard</Link>}
         {status === "authenticated" && <button className="nav-sign-out" disabled={signingOut} onClick={() => void signOut()} type="button">{signingOut ? "Signing out…" : "Sign out"}</button>}
         {signOutError && <p role="alert">{signOutError}</p>}
