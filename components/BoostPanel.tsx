@@ -26,13 +26,7 @@ const PLACEMENTS = [
   },
 ];
 
-/**
- * Seller-side boost surface. Container-width on purpose so the same component
- * works in a 250px Directory sidebar and in a full dashboard column.
- *
- * Paid placement is outside this contract, so this is a preview: the options
- * are real enough to react to, and the control that would take money is dead.
- */
+
 export function BoostPanel() {
   const group = useId();
   const [selected, setSelected] = useState(PLACEMENTS[0].id);
