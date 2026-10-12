@@ -1,281 +1,55 @@
-import { getBridgeApiBase } from "@/lib/phase3/client";
+import { getBridgeApiBase } from "../phase3/client.ts";
 
 export type OrganizationType = "brand" | "retailer" | "dispensary";
-export type ProfileStatus = "draft" | "pending_review" | "published" | "correction_requested" | "rejected" | "suspended";
+export type ProfileStatus = "draft" | "pending_review" | "correction_requested" | "approved" | "rejected" | "suspended";
 export type ContactRequestStatus = "new" | "viewed" | "responded" | "closed";
+export type ContactPreference = "email" | "phone" | "either";
 export type DirectorySort = "name_asc" | "name_desc";
-
-export type Business = {
-  id: string;
-  organizationId?: string;
-  legalName: string;
-  dbaName: string | null;
-  status?: string;
-};
-
-export type DirectoryProfile = {
-  id: string;
-  organizationId?: string;
-  businessId?: string;
-  organizationType: OrganizationType;
-  slug: string;
-  displayName: string;
-  summary: string | null;
-  websiteUrl: string | null;
-  status: ProfileStatus;
-  logoUrl?: string | null;
-};
-
-export type DirectoryProfileInput = {
-  businessId: string;
-  slug: string;
-  displayName: string;
-  summary: string | null;
-  websiteUrl: string | null;
-};
-
-export type DirectoryPage = {
-  profiles: DirectoryProfile[];
-  nextCursor: string | null;
-  hasMore: boolean;
-};
-
-export type ContactRequest = {
-  id: string;
-  slug?: string;
-  profileId?: string;
-  organizationId?: string;
-  firstName: string;
-  workEmail: string;
-  phoneNumber: string;
-  yearsOfService: number;
-  contactPreference: string;
-  message: string | null;
-  status: ContactRequestStatus;
-  createdAt: string;
-  updatedAt?: string;
-  targetDisplayName?: string;
-};
-
-export type ContactRequestInput = Pick<ContactRequest, "firstName" | "workEmail" | "phoneNumber" | "yearsOfService" | "contactPreference" | "message">;
-
-export type Notification = {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  createdAt: string;
-  readAt: string | null;
-};
-
+export type AdminAccountChoice = "standard" | "sales_rep" | "admin";
+export type Business = { id: string; organizationId: string; legalName: string; dbaName: string | null; status: string };
+export type DirectoryLink = { type: "website" | "menu" | "product" | "other"; label: string; url: string; sortOrder: number };
+export type DirectoryProfile = { id?: string; organizationId?: string; businessId?: string; slug: string; displayName: string; summary: string | null; story: string | null; businessType: OrganizationType | null; categories: string[]; city: string | null; state: string | null; region: string | null; publicContact: { email: string | null; phone: string | null }; license: { type: string | null; number: string | null } | null; links: DirectoryLink[]; logoUrl: string | null; status?: ProfileStatus; hasPublishedVersion?: boolean; submittedAt?: string | null; reviewedAt?: string | null; workflowReason?: string | null; approvedAt?: string | null; legalName?: string; dbaName?: string | null; businessName?: string; verified?: boolean };
+export type DirectoryProfileInput = { businessId: string; slug: string; displayName: string; summary: string | null; story: string | null; businessType: OrganizationType; categories: string[]; city: string | null; state: string | null; region: string | null; publicEmail: string | null; publicPhone: string | null; licenseType: string | null; licenseNumber: string | null; links: DirectoryLink[] };
+export type DirectoryPage = { profiles: DirectoryProfile[]; pageInfo: { nextCursor: string | null; hasMore: boolean }; nextCursor: string | null; hasMore: boolean };
+export type AdminDirectoryProfile = { id: string; organization: { id: string; name: string }; business: { id: string; legalName: string; dbaName: string | null }; workingProfile: Omit<DirectoryProfile, "id" | "status"> & { hasLogo: boolean }; status: ProfileStatus; submittedAt: string | null; hasPublishedVersion: boolean; verificationEligibility: { eligible: boolean; einVerified: boolean; organizationActive: boolean; businessActive: boolean } };
+export type ContactRequest = { id: string; status: ContactRequestStatus; routingStatus?: string; firstName?: string; workEmail?: string; phoneNumber?: string; yearsOfService?: number; contactPreference?: ContactPreference; message?: string | null; createdAt: string; updatedAt?: string; target?: { slug: string; displayName: string } };
+export type ContactRequestInput = { firstName: string; workEmail: string; phoneNumber: string; yearsOfService: number; contactPreference: ContactPreference; message: string };
+export type Notification = { id: string; type: string; category: string; title: string; body: string; resourceType: string | null; resourceId: string | null; createdAt: string; readAt: string | null };
 export type NotificationPreferences = Record<"profile" | "contact" | "verification", { inApp: boolean; email: boolean }>;
+export type OffsetPage<T> = { items: T[]; pageInfo: { limit: number; offset: number; hasMore: boolean }; limit: number; offset: number; hasMore: boolean; total: number | null };
 
-export type OffsetPage<T> = { items: T[]; total: number | null; limit: number; offset: number; hasMore: boolean };
-
-export class M4ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
-    super(message);
-    this.name = "M4ApiError";
-  }
-}
-
-function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function text(value: unknown, fallback = ""): string { return typeof value === "string" ? value : fallback; }
-function nullableText(value: unknown): string | null { return typeof value === "string" ? value : null; }
-
-function unwrap(value: unknown, ...keys: string[]): unknown {
-  const source = record(value);
-  for (const key of keys) if (source[key] !== undefined) return source[key];
-  return value;
-}
-
-function apiUrl(path: string): string {
-  const base = getBridgeApiBase();
-  if (!base) throw new M4ApiError(0, "The live Bridge API is not configured.");
-  return `${base.replace(/\/$/, "")}${path}`;
-}
-
-async function request<T>(path: string, init: RequestInit = {}, allow404 = false): Promise<T | null> {
-  let response: Response;
-  try {
-    response = await fetch(apiUrl(path), {
-      ...init,
-      credentials: "include",
-      headers: {
-        Accept: "application/json",
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        ...init.headers,
-      },
-    });
-  } catch (cause) {
-    throw new M4ApiError(0, cause instanceof Error ? cause.message : "The API could not be reached.");
-  }
-  if (allow404 && response.status === 404) return null;
-  const payload = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) {
-    const error = record(payload);
-    throw new M4ApiError(response.status, text(error.message) || text(error.error) || `Request failed (${response.status}).`);
-  }
-  return payload as T;
-}
-
-function business(value: unknown): Business {
-  const item = record(value);
-  return {
-    id: text(item.id || item.businessId),
-    organizationId: nullableText(item.organizationId) ?? undefined,
-    legalName: text(item.legalName),
-    dbaName: nullableText(item.dbaName),
-    status: nullableText(item.status) ?? undefined,
-  };
-}
-
-function profile(value: unknown): DirectoryProfile {
-  const item = record(value);
-  const organization = record(item.organization);
-  return {
-    id: text(item.id || item.profileId),
-    organizationId: nullableText(item.organizationId) ?? undefined,
-    businessId: nullableText(item.businessId) ?? undefined,
-    organizationType: text(item.organizationType || organization.organizationType, "brand") as OrganizationType,
-    slug: text(item.slug),
-    displayName: text(item.displayName),
-    summary: nullableText(item.summary),
-    websiteUrl: nullableText(item.websiteUrl),
-    status: text(item.status, "draft") as ProfileStatus,
-    logoUrl: nullableText(item.logoUrl),
-  };
-}
-
-function contactRequest(value: unknown): ContactRequest {
-  const item = record(value);
-  return {
-    id: text(item.id || item.requestId),
-    slug: nullableText(item.slug) ?? nullableText(item.profileSlug) ?? undefined,
-    profileId: nullableText(item.profileId) ?? undefined,
-    organizationId: nullableText(item.organizationId) ?? undefined,
-    firstName: text(item.firstName),
-    workEmail: text(item.workEmail),
-    phoneNumber: text(item.phoneNumber),
-    yearsOfService: Number(item.yearsOfService ?? 0),
-    contactPreference: text(item.contactPreference, "email"),
-    message: nullableText(item.message),
-    status: text(item.status, "new") as ContactRequestStatus,
-    createdAt: text(item.createdAt, new Date(0).toISOString()),
-    updatedAt: nullableText(item.updatedAt) ?? undefined,
-    targetDisplayName: nullableText(item.targetDisplayName) ?? nullableText(item.displayName) ?? undefined,
-  };
-}
-
-function notification(value: unknown): Notification {
-  const item = record(value);
-  return {
-    id: text(item.id || item.notificationId), type: text(item.type), title: text(item.title), body: text(item.body || item.message),
-    createdAt: text(item.createdAt, new Date(0).toISOString()), readAt: nullableText(item.readAt),
-  };
-}
-
-function offsetPage<T>(value: unknown, keys: string[], parser: (item: unknown) => T, requestedLimit: number, requestedOffset: number): OffsetPage<T> {
-  const root = record(value);
-  let raw: unknown = [];
-  for (const key of keys) if (Array.isArray(root[key])) { raw = root[key]; break; }
-  if (!Array.isArray(raw) && Array.isArray(root.items)) raw = root.items;
-  const items = Array.isArray(raw) ? raw.map(parser) : [];
-  const total = Number.isSafeInteger(root.total) ? root.total as number : null;
-  const limit = Number.isSafeInteger(root.limit) ? root.limit as number : requestedLimit;
-  const offset = Number.isSafeInteger(root.offset) ? root.offset as number : requestedOffset;
-  return { items, total, limit, offset, hasMore: typeof root.hasMore === "boolean" ? root.hasMore : total !== null ? offset + items.length < total : items.length === limit };
-}
+export class M4ApiError extends Error { readonly status: number; readonly code: string; readonly details?: unknown; constructor(status: number, code: string, message: string, details?: unknown) { super(message); this.name = "M4ApiError"; this.status = status; this.code = code; this.details = details; } }
+const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const string = (value: unknown, fallback = "") => typeof value === "string" ? value : fallback;
+const nullable = (value: unknown) => typeof value === "string" ? value : null;
+function apiUrl(path: string) { const base = getBridgeApiBase(); if (!base) throw new M4ApiError(0, "API_NOT_CONFIGURED", "The live Bridge API is not configured."); return `${base.replace(/\/$/, "")}${path}`; }
+async function request<T>(path: string, init: RequestInit = {}, allow404 = false): Promise<T | null> { let response: Response; try { response = await fetch(apiUrl(path), { ...init, credentials: "include", headers: { Accept: "application/json", ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers } }); } catch (cause) { throw new M4ApiError(0, "NETWORK_ERROR", cause instanceof Error ? cause.message : "The API could not be reached."); } const payload = response.status === 204 ? null : await response.json().catch(() => null); if (allow404 && response.status === 404) return null; if (!response.ok) { const error = object(payload); throw new M4ApiError(response.status, string(error.error, "UNKNOWN_ERROR"), string(error.message, `Request failed (${response.status}).`), error.details); } return payload as T; }
+function parseProfile(value: unknown): DirectoryProfile { const item = object(value), contact = object(item.publicContact), license = item.license === null ? null : object(item.license); return { id: nullable(item.id) ?? undefined, organizationId: nullable(item.organizationId) ?? undefined, businessId: nullable(item.businessId) ?? undefined, slug: string(item.slug), displayName: string(item.displayName), summary: nullable(item.summary), story: nullable(item.story), businessType: nullable(item.businessType) as OrganizationType | null, categories: Array.isArray(item.categories) ? item.categories.filter((v): v is string => typeof v === "string") : [], city: nullable(item.city), state: nullable(item.state), region: nullable(item.region), publicContact: { email: nullable(contact.email), phone: nullable(contact.phone) }, license: license ? { type: nullable(license.type), number: nullable(license.number) } : null, links: Array.isArray(item.links) ? item.links.map(object).map((v) => ({ type: string(v.type, "other") as DirectoryLink["type"], label: string(v.label), url: string(v.url), sortOrder: Number(v.sortOrder) || 0 })) : [], logoUrl: nullable(item.logoUrl), status: nullable(item.status) as ProfileStatus | undefined, hasPublishedVersion: typeof item.hasPublishedVersion === "boolean" ? item.hasPublishedVersion : undefined, submittedAt: nullable(item.submittedAt), reviewedAt: nullable(item.reviewedAt), workflowReason: nullable(item.workflowReason), approvedAt: nullable(item.approvedAt), legalName: nullable(item.legalName) ?? undefined, dbaName: nullable(item.dbaName), businessName: nullable(item.businessName) ?? undefined, verified: typeof item.verified === "boolean" ? item.verified : undefined }; }
+function pageInfo(value: unknown, limit: number, offset: number) { const info = object(value); return { limit: Number.isInteger(info.limit) ? Number(info.limit) : limit, offset: Number.isInteger(info.offset) ? Number(info.offset) : offset, hasMore: info.hasMore === true }; }
+function offsetPage<T>(items: T[], info: { limit: number; offset: number; hasMore: boolean }): OffsetPage<T> { return { items, pageInfo: info, ...info, total: null }; }
+export function mapAdminAccountChoice(choice: AdminAccountChoice) { return choice === "admin" ? { accountType: "standard" as const, platformRole: "admin" as const } : { accountType: choice, platformRole: null }; }
+export function validateAccountSettings(displayName: string, phone: string, initial: { displayName: string | null; phone: string | null }) { const name = displayName.trim(), nextPhone = phone.trim(); const body: { displayName?: string | null; phone?: string | null } = {}; if (name !== (initial.displayName ?? "")) { if (name.length > 100) throw new Error("Display name must be 100 characters or fewer."); body.displayName = name || null; } if (nextPhone !== (initial.phone ?? "")) { if (nextPhone.length > 30) throw new Error("Phone number must be 30 characters or fewer."); body.phone = nextPhone || null; } if (!Object.keys(body).length) throw new Error("Change at least one field before saving."); return body; }
 
 export const m4Api = {
-  async listBusinesses(organizationId: string) {
-    const value = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/businesses`);
-    const root = record(value); const rows = Array.isArray(root.businesses) ? root.businesses : Array.isArray(value) ? value : [];
-    return rows.map(business);
-  },
-  async createBusiness(organizationId: string, input: { legalName: string; dbaName: string | null }) {
-    const value = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/businesses`, { method: "POST", body: JSON.stringify(input) });
-    return business(unwrap(value, "business"));
-  },
-  async getProfile(organizationId: string) {
-    const value = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile`, {}, true);
-    return value === null ? null : profile(unwrap(value, "profile", "directoryProfile"));
-  },
-  async saveProfile(organizationId: string, input: DirectoryProfileInput) {
-    const value = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile`, { method: "PUT", body: JSON.stringify(input) });
-    return profile(unwrap(value, "profile", "directoryProfile"));
-  },
-  async submitProfile(organizationId: string) {
-    const value = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile/submit`, { method: "POST", body: "{}" });
-    return profile(unwrap(value, "profile", "directoryProfile"));
-  },
-  async listDirectory(filters: { q?: string; organizationType?: OrganizationType; sort?: DirectorySort; limit?: number; cursor?: string } = {}) {
-    const query = new URLSearchParams();
-    if (filters.q?.trim()) query.set("q", filters.q.trim());
-    if (filters.organizationType) query.set("organizationType", filters.organizationType);
-    if (filters.sort) query.set("sort", filters.sort);
-    query.set("limit", String(filters.limit ?? 20));
-    if (filters.cursor) query.set("cursor", filters.cursor);
-    const value = await request<unknown>(`/api/v1/directory/profiles?${query}`);
-    const root = record(value); const rows = Array.isArray(root.profiles) ? root.profiles : Array.isArray(root.items) ? root.items : [];
-    const nextCursor = nullableText(root.nextCursor) ?? nullableText(record(root.pagination).nextCursor);
-    return { profiles: rows.map(profile), nextCursor, hasMore: typeof root.hasMore === "boolean" ? root.hasMore : nextCursor !== null } satisfies DirectoryPage;
-  },
-  async getPublicProfile(slug: string) {
-    const value = await request<unknown>(`/api/v1/directory/profiles/${encodeURIComponent(slug)}`);
-    return profile(unwrap(value, "profile", "directoryProfile"));
-  },
-  logoUrl(slug: string) { return apiUrl(`/api/v1/directory/profiles/${encodeURIComponent(slug)}/logo`); },
-  async uploadLogo(organizationId: string, file: File) {
-    const intentValue = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile/logo/upload`, { method: "POST", body: JSON.stringify({ contentType: file.type, fileSize: file.size }) });
-    const intent = record(unwrap(intentValue, "upload", "signedUpload"));
-    const uploadUrl = text(intent.uploadUrl || intent.signedUrl || intent.url);
-    if (!uploadUrl) throw new M4ApiError(500, "The backend did not return a signed upload URL.");
-    const headers = record(intent.headers);
-    const response = await fetch(uploadUrl, { method: text(intent.method, "PUT"), headers: { "Content-Type": file.type, ...Object.fromEntries(Object.entries(headers).filter((entry): entry is [string, string] => typeof entry[1] === "string")) }, body: file });
-    if (!response.ok) throw new M4ApiError(response.status, "The logo could not be uploaded to storage.");
-    return intentValue;
-  },
-  async deleteLogo(organizationId: string) { await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile/logo`, { method: "DELETE" }); },
-  async createContactRequest(slug: string, input: ContactRequestInput) {
-    const value = await request<unknown>(`/api/v1/directory/profiles/${encodeURIComponent(slug)}/contact-requests`, { method: "POST", body: JSON.stringify(input) });
-    return contactRequest(unwrap(value, "contactRequest", "request"));
-  },
-  async inbox(organizationId: string, filters: { status?: ContactRequestStatus; limit?: number; offset?: number } = {}) {
-    const limit = filters.limit ?? 20, offset = filters.offset ?? 0; const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-    if (filters.status) query.set("status", filters.status);
-    const value = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/contact-requests?${query}`);
-    return offsetPage(value, ["contactRequests", "requests"], contactRequest, limit, offset);
-  },
-  async sent(filters: { limit?: number; offset?: number } = {}) {
-    const limit = filters.limit ?? 20, offset = filters.offset ?? 0;
-    const value = await request<unknown>(`/api/v1/contact-requests/sent?limit=${limit}&offset=${offset}`);
-    return offsetPage(value, ["contactRequests", "requests"], contactRequest, limit, offset);
-  },
-  async updateContactStatus(organizationId: string, requestId: string, status: ContactRequestStatus) {
-    const value = await request<unknown>(`/api/v1/organizations/${encodeURIComponent(organizationId)}/contact-requests/${encodeURIComponent(requestId)}/status`, { method: "POST", body: JSON.stringify({ status }) });
-    return contactRequest(unwrap(value, "contactRequest", "request"));
-  },
-  async notifications(filters: { unreadOnly?: boolean; limit?: number; offset?: number } = {}) {
-    const limit = filters.limit ?? 20, offset = filters.offset ?? 0;
-    const query = new URLSearchParams({ unreadOnly: String(filters.unreadOnly ?? false), limit: String(limit), offset: String(offset) });
-    const value = await request<unknown>(`/api/v1/notifications?${query}`);
-    return offsetPage(value, ["notifications"], notification, limit, offset);
-  },
-  async markNotificationRead(id: string) { await request(`/api/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST", body: "{}" }); },
-  async markAllNotificationsRead() { return request<{ updatedCount: number }>("/api/v1/notifications/read-all", { method: "POST", body: "{}" }); },
-  async getNotificationPreferences() {
-    const value = await request<unknown>("/api/v1/notification-preferences");
-    return unwrap(value, "preferences") as NotificationPreferences;
-  },
-  async updateNotificationPreferences(preferences: NotificationPreferences) {
-    const value = await request<unknown>("/api/v1/notification-preferences", { method: "PUT", body: JSON.stringify(preferences) });
-    return unwrap(value, "preferences") as NotificationPreferences;
-  },
-  async reviewProfile(profileId: string, action: "approve" | "request-correction" | "reject" | "suspend", reason?: string) {
-    return request<unknown>(`/api/v1/admin/directory-profiles/${encodeURIComponent(profileId)}/${action}`, { method: "POST", body: JSON.stringify(action === "approve" ? {} : { reason }) });
-  },
+  updateAccount(input: { displayName?: string | null; phone?: string | null }) { return request<{ profile: { displayName: string | null; phone: string | null } }>("/api/v1/auth/me", { method: "PATCH", body: JSON.stringify(input) }); },
+  inviteAdminUser(input: { email: string; displayName: string; choice: AdminAccountChoice }) { return request<{ user: { id: string; email: string; displayName: string; accountType: "standard" | "sales_rep"; platformRole: "admin" | null; invitationSent: true } }>("/api/v1/admin/users", { method: "POST", body: JSON.stringify({ email: input.email.trim().toLowerCase(), displayName: input.displayName.trim(), ...mapAdminAccountChoice(input.choice) }) }); },
+  async listBusinesses(organizationId: string) { const root = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/businesses`)); return (Array.isArray(root.businesses) ? root.businesses : []).map((v) => { const b = object(v); return { id: string(b.id), organizationId: string(b.organizationId), legalName: string(b.legalName), dbaName: nullable(b.dbaName), status: string(b.status) }; }); },
+  async createBusiness(organizationId: string, input: { legalName: string; dbaName: string | null }) { const root = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/businesses`, { method: "POST", body: JSON.stringify(input) })); const b = object(root.business); return { id: string(b.id), organizationId: string(b.organizationId), legalName: string(b.legalName), dbaName: nullable(b.dbaName), status: string(b.status) }; },
+  async getProfile(organizationId: string) { const value = await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile`, {}, true); return value === null ? null : parseProfile(object(value).profile); },
+  async saveProfile(organizationId: string, input: DirectoryProfileInput) { const root = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile`, { method: "PUT", body: JSON.stringify(input) })); return parseProfile(root.profile); },
+  async submitProfile(organizationId: string) { const root = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile/submit`, { method: "POST" })); return parseProfile(root.profile); },
+  async uploadLogo(organizationId: string, file: File) { const root = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile/logo/upload`, { method: "POST", body: JSON.stringify({ contentType: file.type, fileSize: file.size }) })); const upload = object(root.upload), signedUrl = string(upload.signedUrl), uploadId = string(upload.uploadId), headers = object(upload.requiredHeaders); if (!signedUrl || !uploadId) throw new M4ApiError(500, "INVALID_UPLOAD_RESPONSE", "The backend did not return a complete upload request."); const storage = await fetch(signedUrl, { method: "PUT", headers: Object.fromEntries(Object.entries(headers).filter((entry): entry is [string, string] => typeof entry[1] === "string")), body: file, credentials: "omit" }); if (!storage.ok) throw new M4ApiError(storage.status, "STORAGE_UPLOAD_FAILED", "The logo could not be uploaded to storage."); const complete = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile/logo/complete`, { method: "POST", body: JSON.stringify({ uploadId }) })); return parseProfile(complete.profile); },
+  async deleteLogo(organizationId: string) { const root = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/directory-profile/logo`, { method: "DELETE" })); return parseProfile(root.profile); },
+  async listDirectory(filters: { q?: string; organizationType?: OrganizationType; category?: string; state?: string; city?: string; region?: string; verified?: boolean; sort?: DirectorySort; limit?: number; cursor?: string } = {}) { const query = new URLSearchParams(); Object.entries(filters).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); }); const root = object(await request(`/api/v1/directory/profiles?${query}`)), info = object(root.pageInfo), nextCursor = nullable(info.nextCursor), hasMore = info.hasMore === true; return { profiles: (Array.isArray(root.profiles) ? root.profiles : []).map(parseProfile), pageInfo: { nextCursor, hasMore }, nextCursor, hasMore } as DirectoryPage; },
+  async getPublicProfile(slug: string) { const root = object(await request(`/api/v1/directory/profiles/${encodeURIComponent(slug)}`)); return parseProfile(root.profile); },
+  async listAdminProfiles(filters: { status?: ProfileStatus; limit?: number; offset?: number } = {}) { const limit = filters.limit ?? 20, offset = filters.offset ?? 0, query = new URLSearchParams({ limit: String(limit), offset: String(offset) }); if (filters.status) query.set("status", filters.status); const root = object(await request(`/api/v1/admin/directory-profiles?${query}`)); const rows = Array.isArray(root.profiles) ? root.profiles : []; const items = rows.map((v) => { const row = object(v), org = object(row.organization), biz = object(row.business), working = parseProfile(row.workingProfile), eligibility = object(row.verificationEligibility); return { id: string(row.id), organization: { id: string(org.id), name: string(org.name) }, business: { id: string(biz.id), legalName: string(biz.legalName), dbaName: nullable(biz.dbaName) }, workingProfile: { ...working, hasLogo: object(row.workingProfile).hasLogo === true }, status: string(row.status) as ProfileStatus, submittedAt: nullable(row.submittedAt), hasPublishedVersion: row.hasPublishedVersion === true, verificationEligibility: { eligible: eligibility.eligible === true, einVerified: eligibility.einVerified === true, organizationActive: eligibility.organizationActive === true, businessActive: eligibility.businessActive === true } }; }); return offsetPage(items, pageInfo(root.pageInfo, limit, offset)); },
+  reviewProfile(profileId: string, action: "approve" | "request-correction" | "reject" | "suspend", reason?: string) { return request(`/api/v1/admin/directory-profiles/${encodeURIComponent(profileId)}/${action}`, { method: "POST", ...(action === "approve" ? {} : { body: JSON.stringify({ reason }) }) }); },
+  async createContactRequest(slug: string, input: ContactRequestInput) { const root = object(await request(`/api/v1/directory/profiles/${encodeURIComponent(slug)}/contact-requests`, { method: "POST", body: JSON.stringify(input) })); return root.request as ContactRequest; },
+  async inbox(organizationId: string, filters: { status?: ContactRequestStatus; limit?: number; offset?: number } = {}) { return contactPage(`/api/v1/organizations/${encodeURIComponent(organizationId)}/contact-requests`, filters); },
+  async sent(filters: { limit?: number; offset?: number } = {}) { return contactPage("/api/v1/contact-requests/sent", filters); },
+  async updateContactStatus(organizationId: string, requestId: string, status: Exclude<ContactRequestStatus, "new">) { const root = object(await request(`/api/v1/organizations/${encodeURIComponent(organizationId)}/contact-requests/${encodeURIComponent(requestId)}/status`, { method: "POST", body: JSON.stringify({ status }) })); return root.request; },
+  async notifications(filters: { unreadOnly?: boolean; limit?: number; offset?: number } = {}) { const limit = filters.limit ?? 20, offset = filters.offset ?? 0, query = new URLSearchParams({ unreadOnly: String(filters.unreadOnly ?? false), limit: String(limit), offset: String(offset) }); const root = object(await request(`/api/v1/notifications?${query}`)); return offsetPage((Array.isArray(root.notifications) ? root.notifications : []) as Notification[], pageInfo(root.pageInfo, limit, offset)); },
+  markNotificationRead(id: string) { return request(`/api/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST" }); }, markAllNotificationsRead() { return request<{ updatedCount: number }>("/api/v1/notifications/read-all", { method: "POST" }); },
+  async getNotificationPreferences() { return object(await request("/api/v1/notification-preferences")).preferences as NotificationPreferences; }, async updateNotificationPreferences(preferences: NotificationPreferences) { return object(await request("/api/v1/notification-preferences", { method: "PUT", body: JSON.stringify(preferences) })).preferences as NotificationPreferences; },
 };
+async function contactPage(path: string, filters: { status?: ContactRequestStatus; limit?: number; offset?: number }) { const limit = filters.limit ?? 20, offset = filters.offset ?? 0, query = new URLSearchParams({ limit: String(limit), offset: String(offset) }); if (filters.status) query.set("status", filters.status); const root = object(await request(`${path}?${query}`)); return offsetPage((Array.isArray(root.requests) ? root.requests : []) as ContactRequest[], pageInfo(root.pageInfo, limit, offset)); }

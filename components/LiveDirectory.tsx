@@ -11,12 +11,12 @@ const errorText = (cause: unknown) => cause instanceof Error ? cause.message : "
 
 function Identity({ profile, heading = "h2" }: { profile: DirectoryProfile; heading?: "h1" | "h2" }) {
   const Heading = heading;
-  return <><div className="card-topline"><span className="avatar" aria-hidden="true">{profile.displayName.split(/\s+/).slice(0, 2).map((word) => word[0]).join("")}</span><span className="status-chip verified">Published</span></div><Heading>{profile.displayName}</Heading><p className="muted">{types[profile.organizationType] ?? profile.organizationType}</p>{profile.summary && <p>{profile.summary}</p>}</>;
+  return <><div className="card-topline"><span className="avatar" aria-hidden="true">{profile.displayName.split(/\s+/).slice(0, 2).map((word) => word[0]).join("")}</span><span className="status-chip verified">Published</span></div><Heading>{profile.displayName}</Heading><p className="muted">{profile.businessType ? types[profile.businessType] : "Business"}</p>{profile.summary && <p>{profile.summary}</p>}</>;
 }
 
 export function LiveDirectory() {
   const [q, setQ] = useState(""); const [organizationType, setOrganizationType] = useState<OrganizationType | "">(""); const [sort, setSort] = useState<DirectorySort>("name_asc");
-  const [result, setResult] = useState<DirectoryPage>({ profiles: [], nextCursor: null, hasMore: false });
+  const [result, setResult] = useState<DirectoryPage>({ profiles: [], pageInfo: { nextCursor: null, hasMore: false }, nextCursor: null, hasMore: false });
   const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [error, setError] = useState(""); const [revision, setRevision] = useState(0);
   const sentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -29,7 +29,7 @@ export function LiveDirectory() {
 
   async function loadMore() {
     if (!result.nextCursor || loadingMore) return; setLoadingMore(true); setError("");
-    try { const page = await m4Api.listDirectory({ q, organizationType: organizationType || undefined, sort, limit: 20, cursor: result.nextCursor }); setResult((current) => ({ profiles: [...current.profiles, ...page.profiles.filter((next) => !current.profiles.some((item) => item.id === next.id))], nextCursor: page.nextCursor, hasMore: page.hasMore })); }
+    try { const page = await m4Api.listDirectory({ q, organizationType: organizationType || undefined, sort, limit: 20, cursor: result.nextCursor }); setResult((current) => ({ profiles: [...current.profiles, ...page.profiles.filter((next) => !current.profiles.some((item) => item.slug === next.slug))], pageInfo: page.pageInfo, nextCursor: page.nextCursor, hasMore: page.hasMore })); }
     catch (cause) { setError(errorText(cause)); } finally { setLoadingMore(false); }
   }
 
@@ -44,5 +44,6 @@ export function LiveDirectory() {
 export function LiveDirectoryDetail({ identifier }: { identifier: string }) {
   const [profile, setProfile] = useState<DirectoryProfile | null>(null); const [error, setError] = useState(""); const [revision, setRevision] = useState(0);
   useEffect(() => { let active = true; m4Api.getPublicProfile(identifier).then((value) => { if (active) setProfile(value); }).catch((cause) => { if (active) setError(errorText(cause)); }); return () => { active = false; }; }, [identifier, revision]);
-  return <section className="page shell profile-page"><Link className="text-link back-link" href="/explore">← Back to Explore</Link>{error ? <div className="empty-state"><h1>Profile unavailable</h1><p role="alert">{error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div> : !profile ? <p role="status">Loading profile…</p> : <article className="content-card">{profile.logoUrl && <Image unoptimized alt={`${profile.displayName} logo`} height={96} src={profile.logoUrl} width={96} />}<Identity heading="h1" profile={profile} />{profile.websiteUrl && <p><a className="text-link" href={profile.websiteUrl} rel="noreferrer" target="_blank">Visit website</a></p>}<section id="contact-request"><ContactRequestForm profileName={profile.displayName} slug={profile.slug} /></section></article>}</section>;
+  const website = profile?.links.find((link) => link.type === "website");
+  return <section className="page shell profile-page"><Link className="text-link back-link" href="/explore">← Back to Explore</Link>{error ? <div className="empty-state"><h1>Profile unavailable</h1><p role="alert">{error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div> : !profile ? <p role="status">Loading profile…</p> : <article className="content-card">{profile.logoUrl && <Image unoptimized alt={`${profile.displayName} logo`} height={96} src={profile.logoUrl} width={96} />}<Identity heading="h1" profile={profile} />{profile.story && <p>{profile.story}</p>}{website && <p><a className="text-link" href={website.url} rel="noreferrer" target="_blank">Visit website</a></p>}<section id="contact-request"><ContactRequestForm profileName={profile.displayName} slug={profile.slug} /></section></article>}</section>;
 }

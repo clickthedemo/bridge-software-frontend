@@ -4,11 +4,7 @@ import { useId, useState } from "react";
 import { PromotedSlot } from "./PromotedSlot";
 import "./boost-panel.css";
 
-/**
- * The placements a member could buy. Three and concrete on purpose - a reviewer
- * has to be able to point at one and say "that one, not that one". Community
- * News is absent on purpose: that feed is stated as unpaid on its own page.
- */
+
 const PLACEMENTS = [
   {
     id: "front-page",
@@ -30,13 +26,7 @@ const PLACEMENTS = [
   },
 ];
 
-/**
- * Seller-side boost surface. Container-width on purpose so the same component
- * works in a 250px Directory sidebar and in a full dashboard column.
- *
- * Paid placement is outside this contract, so this is a preview: the options
- * are real enough to react to, and the control that would take money is dead.
- */
+
 export function BoostPanel() {
   const group = useId();
   const [selected, setSelected] = useState(PLACEMENTS[0].id);
