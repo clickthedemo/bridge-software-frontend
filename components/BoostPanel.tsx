@@ -4,11 +4,7 @@ import { useId, useState } from "react";
 import { PromotedSlot } from "./PromotedSlot";
 import "./boost-panel.css";
 
-/**
- * The placements a member could buy. Three and concrete on purpose - a reviewer
- * has to be able to point at one and say "that one, not that one". Community
- * News is absent on purpose: that feed is stated as unpaid on its own page.
- */
+
 const PLACEMENTS = [
   {
     id: "front-page",
