@@ -1020,7 +1020,7 @@ body:has(.mandatory-review-backdrop) .bridge-tabbar { display: none; }
 
 /* Specular edge: a single implied light source across the top of every glass
    surface, rather than a uniform border doing all the work. */
-.glass, .profile-card, .content-card, .contact-card, .metric-card, .filter-panel,
+.glass, .profile-card, .content-card, .contact-card, .metric-card,
 .moment-card, .suite-card, .market-switcher, .pricing-plan, .explore-category-tile {
   position: relative;
 }

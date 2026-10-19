@@ -45,6 +45,7 @@ export function LiveDirectory() {
 }
 
 function DirectoryResults({ filters }: { filters: Filters }) {
+  const hasFilters = (Object.keys(initialFilters) as (keyof Filters)[]).some(key => key !== "sort" && filters[key] !== initialFilters[key]);
   const [result, setResult] = useState<DirectoryPage>({ profiles: [], pageInfo: { nextCursor: null, hasMore: false }, nextCursor: null, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -80,7 +81,7 @@ function DirectoryResults({ filters }: { filters: Filters }) {
   return <section aria-busy={loading || loadingMore}>
     {loading && <p role="status">Loading directory…</p>}
     {error && <div className="empty-state"><p className="form-error" role="alert">{error}</p><button className="button secondary" onClick={() => { if (result.profiles.length) void loadMore(); else { setLoading(true); setError(""); setRevision((value) => value + 1); } }} type="button">Try again</button></div>}
-    {!loading && !error && !result.profiles.length && <div className="empty-state"><h2>No matching businesses</h2><p>{filters.verified === "false" ? "Only EIN-verified, approved businesses are currently published." : "Try changing or clearing your filters."}</p></div>}
+    {!loading && !error && !result.profiles.length && (hasFilters ? <div className="empty-state"><h2>No matching businesses</h2><p>{filters.verified === "false" ? "Only EIN-verified, approved businesses are currently published." : "Try changing or clearing your filters."}</p></div> : <div className="empty-state"><h2>No businesses published yet</h2><p>Approved business profiles appear here once they are published.</p></div>)}
     <p className="result-count" aria-live="polite">{result.profiles.length} business{result.profiles.length === 1 ? "" : "es"} loaded</p>
     <div className="card-grid two">{result.profiles.map((profile) => <article className="profile-card" key={profile.slug}><Identity profile={profile} /><Link className="button secondary" href={`/profile/${encodeURIComponent(profile.slug)}`}>View profile</Link></article>)}</div>
     <div ref={sentinel}>{result.hasMore && <button className="button secondary" disabled={loading || loadingMore} onClick={() => void loadMore()} type="button">{loadingMore ? "Loading more…" : "Load more"}</button>}</div>

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const directions = ["current", "network", "botanical"];
+const directionLabels = { current: "Trusted Current", network: "Modern Network", botanical: "Botanical Ledger" };
 const expectedRoutes = [
   "index.html",
   "community/index.html",
@@ -30,7 +31,7 @@ for (const direction of directions) {
 
   const home = readFileSync(join(outputRoot, "index.html"), "utf8");
   assert.match(home, new RegExp(`data-theme=\\"${direction}\\"`), `${direction} theme is not pinned`);
-  assert.match(home, /Provisional preview/, `${direction} preview is not labeled provisional`);
+  assert.ok(home.includes(`preview-chip">${directionLabels[direction]}<`), `${direction} preview is missing its ${directionLabels[direction]} direction chip`);
   assert.match(home, /noindex/, `${direction} preview is missing noindex metadata`);
 
   for (const route of expectedRoutes) {
@@ -38,7 +39,7 @@ for (const direction of directions) {
   }
 
   const community = readFileSync(join(outputRoot, "community/index.html"), "utf8");
-  assert.match(community, /News grid/, `${direction} Community News is missing News grid`);
+  assert.match(community, /Visual news/, `${direction} Community News is missing Visual news`);
   assert.match(community, /Classic feed/, `${direction} Community News is missing Classic feed`);
 
   const create = readFileSync(join(outputRoot, "create/index.html"), "utf8");
@@ -46,8 +47,8 @@ for (const direction of directions) {
   assert.match(create, /Protected (?:business )?detail/, `${direction} Create is missing the protected-detail boundary`);
 
   const profile = readFileSync(join(outputRoot, "my-profile/index.html"), "utf8");
-  assert.match(profile, /Public view/, `${direction} My Profile is missing Public view`);
-  assert.match(profile, /B2B/, `${direction} My Profile is missing the verified-business view`);
+  // The Public view / B2B toggle renders client-side after sign-in; lib/phase3 tests cover its projection.
+  assert.match(profile, /Checking access/, `${direction} My Profile is missing its sign-in gate`);
 
   const explore = readFileSync(join(outputRoot, "explore/index.html"), "utf8");
   assert.match(explore, /All states/, `${direction} Explore is missing nationwide state selection`);
