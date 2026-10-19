@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ContactRequestForm } from "@/components/M4ContactRequests";
 import { m4Api, type DirectoryPage, type DirectoryProfile, type DirectorySort, type OrganizationType } from "@/lib/m4/api";
 import { getBridgeApiBase } from "@/lib/phase3/client";
+import { ProfilePosts, SaveProfileButton } from "@/components/Phase5Engagement";
 
 const types: Record<OrganizationType, string> = { brand: "Brand", retailer: "Retailer", dispensary: "Dispensary" };
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : "The directory could not be loaded.";
@@ -100,5 +101,5 @@ function DirectoryDetail({ identifier }: { identifier: string }) {
   const logo = logoUrl(profile?.logoUrl ?? null);
   return <section className="page shell profile-page"><Link className="text-link back-link" href="/explore">← Back to Explore</Link>{error ? <div className="empty-state"><h1>Profile unavailable</h1><p role="alert">{error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div> : !profile ? <p role="status">Loading profile…</p> : <article className="content-card">{logo && <Image unoptimized alt={`${profile.displayName} logo`} height={96} src={logo} width={96} />}<Identity heading="h1" profile={profile} />{profile.story && <p>{profile.story}</p>}{profile.license && <p>{profile.license.type || "License"}: {profile.license.number || "Not provided"}</p>}
     {profile.links.length > 0 && <ul>{[...profile.links].sort((a, b) => a.sortOrder - b.sortOrder).map((link, index) => { const url = webUrl(link.url); return url ? <li key={index}><a className="text-link" href={url} rel="noopener noreferrer" target="_blank">{link.label || link.type}</a></li> : null; })}</ul>}
-    <section id="contact-request"><ContactRequestForm profileName={profile.displayName} slug={profile.slug} /></section></article>}</section>;
+    <section id="contact-request"><ContactRequestForm profileName={profile.displayName} slug={profile.slug} /></section><SaveProfileButton slug={profile.slug} /></article>}{profile && !error && <ProfilePosts slug={profile.slug} />}</section>;
 }
