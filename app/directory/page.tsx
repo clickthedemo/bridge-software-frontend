@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { DirectoryClient } from "./directory-client";
 
 export default function DirectoryPage() {
@@ -8,7 +9,7 @@ export default function DirectoryPage() {
         <h1>Find your next partner.</h1>
         <p className="lede">Search the directory by organization, role, market, or specialty.</p>
       </div>
-      <DirectoryClient />
+      <Suspense fallback={<p role="status">Loading directory…</p>}><DirectoryClient /></Suspense>
     </section>
   );
 }

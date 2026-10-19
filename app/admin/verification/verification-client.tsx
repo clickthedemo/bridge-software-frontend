@@ -1,50 +1,15 @@
 "use client";
-
-import { useEffect, useMemo, useState } from "react";
-import { getPhase3Client, isPhase3LiveApi } from "@/lib/phase3";
-
-import { normalizeVerificationQueue, type VerificationQueueRow } from "@/lib/phase3/verification-queue";
-
-function label(value: string) {
-  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-export function VerificationQueue() {
-  const client = useMemo(() => getPhase3Client(), []);
-  const [rows, setRows] = useState<VerificationQueueRow[]>([]);
-  const [status, setStatus] = useState("");
-  const [itemType, setItemType] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    queueMicrotask(() => {
-      if (!active) return;
-      setLoading(true);
-      setError("");
-      client.getVerificationQueue({ status: status || undefined, itemType: itemType || undefined, limit: 50 })
-        .then((response) => { const parsed = normalizeVerificationQueue(response); if (active) setRows(parsed); })
-        .catch((caught: unknown) => { if (active) setError(caught instanceof Error ? caught.message : "The verification queue could not be loaded."); })
-        .finally(() => { if (active) setLoading(false); });
-    });
-    return () => { active = false; };
-  }, [client, status, itemType, reload]);
-
-  return <>
-    <section className="admin-content-card admin-user-filters" aria-label="Verification queue filters">
-      <label><span>Status</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Default active queue</option><option value="pending">Pending</option><option value="in_review">In review</option><option value="verification_requested">Verification requested</option><option value="verified">Verified</option><option value="rejected">Rejected</option><option value="correction_required">Correction required</option><option value="not_applicable">Not applicable</option></select></label>
-      <label><span>Item type</span><select value={itemType} onChange={(event) => setItemType(event.target.value)}><option value="">All item types</option><option value="ein">EIN</option><option value="cannabis_license">Cannabis license</option><option value="business_registration">Business registration</option><option value="document">Document</option></select></label>
-    </section>
-    <div className="content-card table-card">
-      <div className="result-bar"><strong>{rows.length} queue items</strong><span className="status-chip pending">{isPhase3LiveApi() ? "Live API" : "Preview"}</span></div>
-      {loading && <p className="admin-users-empty" role="status">Loading verification queue…</p>}
-      {!loading && error && <div className="admin-users-error" role="alert"><p>{error}</p><button className="button" onClick={() => setReload((value) => value + 1)} type="button">Try again</button></div>}
-      {!loading && !error && <div className="table-scroll"><table><thead><tr><th>Organization</th><th>Type</th><th>Status</th><th>Submitted</th><th>Case ID</th></tr></thead><tbody>
-        {rows.map((item) => <tr key={item.id}><td><strong>{item.organization}</strong></td><td>{label(item.itemType)}</td><td><span className={`status-chip ${item.status === "verified" ? "verified" : item.status === "rejected" || item.status === "correction_required" ? "warning" : "pending"}`}>{label(item.status)}</span></td><td>{item.submittedAt ? new Date(item.submittedAt).toLocaleString() : "—"}</td><td><code>{item.caseId}</code></td></tr>)}
-        {!rows.length && <tr><td className="admin-users-empty" colSpan={5}>No verification cases match these filters.</td></tr>}
-      </tbody></table></div>}
-    </div>
-  </>;
+import { useEffect,useState } from "react";
+import { m4Api,type BusinessLicense } from "@/lib/m4/api";
+import { actionReasonError,licenseActionLabel,licenseActions,licenseDisplayStatus,type LicenseReviewAction } from "@/lib/m4/review-actions";
+import { useNotificationFocus } from "@/lib/m4/notification-focus";
+export { VerificationQueue } from "./ein-verification-queue";
+const label=(value:string)=>value.replaceAll("_"," ").replace(/\b\w/g,(letter)=>letter.toUpperCase());
+export function BusinessLicenseQueue(){
+ const[licenses,setLicenses]=useState<BusinessLicense[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState(""),[reason,setReason]=useState(""),[loading,setLoading]=useState(true),[reviewing,setReviewing]=useState(false),[status,setStatus]=useState<""|BusinessLicense["status"]>("pending"),[revision,setRevision]=useState(0),[pending,setPending]=useState<{license:BusinessLicense;action:LicenseReviewAction}|null>(null);
+ useNotificationFocus("verificationId",licenses.map((item)=>item.id),".admin-review-list .admin-review-card");
+ useEffect(()=>{let active=true;queueMicrotask(()=>{if(!active)return;setLoading(true);setError("");m4Api.listAdminBusinessLicenses(status||undefined).then((value)=>{if(active)setLicenses(value);}).catch((caught)=>{if(active)setError(caught instanceof Error?caught.message:"The licence queue could not be loaded.");}).finally(()=>{if(active)setLoading(false);});});return()=>{active=false;};},[status,revision]);
+ function choose(license:BusinessLicense,action:LicenseReviewAction){if(action==="verified"&&!window.confirm("Approve this licence?"))return;const selection={license,action};setPending(selection);setReason("");setError("");if(action==="verified")void review(selection,"");}
+ async function review(selection=pending,value=reason){if(!selection)return;const validation=actionReasonError(selection.action,value);if(validation){setError(validation);return;}setReviewing(true);setError("");setNotice("");try{await m4Api.reviewBusinessLicense(selection.license.id,selection.action,value.trim()||undefined);setReason("");setPending(null);setNotice(selection.action==="suspended"?"Licence suspended.":"Licence review saved.");setRevision((current)=>current+1);}catch(caught){setError(caught instanceof Error?caught.message:"The licence could not be reviewed.");}finally{setReviewing(false);}}
+ return <section className="admin-review-stack"><div className="admin-section-heading"><div><h2>Business licences</h2><p>Protected licence records and review decisions.</p></div><span className="status-chip pending">{licenses.length} records</span></div><nav className="admin-status-tabs" aria-label="Licence status">{(["","pending","verified","rejected","suspended","expired"] as const).map((item)=><button aria-pressed={status===item} key={item||"all"} onClick={()=>setStatus(item)} type="button">{item?label(item):"All"}</button>)}</nav>{notice&&<p className="success-message" role="status">{notice}</p>}{error&&<p className="form-error" role="alert">{error}</p>}{loading&&<p role="status">Loading licences…</p>}{!loading&&!licenses.length&&<div className="empty-state"><h3>No licences found</h3><p>Select another status.</p></div>}<div className="admin-review-list">{licenses.map((license)=>{const displayStatus=licenseDisplayStatus(license),actions=licenseActions(license);return <article className="admin-review-card" key={license.id}><header><div><p className="eyebrow">{label(license.licenseType)}</p><h3>{license.issuingState} licence</h3></div><span className={`status-chip ${displayStatus==="verified"?"verified":displayStatus==="rejected"||displayStatus==="suspended"?"warning":"pending"}`}>{label(displayStatus)}</span></header><div className="admin-record-grid"><p><span>Expiration</span><strong>{license.expiresOn}</strong></p><p><span>Verification</span><strong>{license.verifiedAt?new Date(license.verifiedAt).toLocaleDateString():"Not verified"}</strong></p></div>{displayStatus==="correction_requested"&&<p className="boundary-note">Waiting for resubmission</p>}{license.reviewReason&&<p className="form-hint">Review feedback: {license.reviewReason}</p>}{actions.length>0&&<footer className="button-row">{actions.map((action)=><button className={action==="verified"?"button primary":"button secondary"} key={action} onClick={()=>choose(license,action)} type="button">{licenseActionLabel(action)}</button>)}</footer>}</article>;})}</div>{pending&&pending.action!=="verified"&&<div className="review-modal-backdrop"><section className="review-modal" role="dialog" aria-modal="true" aria-labelledby="license-review-title"><h2 id="license-review-title">{licenseActionLabel(pending.action)}</h2><p>Confirm this action for the {pending.license.issuingState} licence.</p><label htmlFor="license-review-reason">{pending.action==="suspended"?"Suspension reason (required)":"Reason (required)"}</label><textarea autoFocus id="license-review-reason" maxLength={2000} required rows={4} value={reason} onChange={(event)=>setReason(event.target.value)}/><div className="button-row"><button className="button primary" disabled={reviewing} onClick={()=>void review()}>{reviewing?"Saving…":`Confirm ${licenseActionLabel(pending.action).toLowerCase()}`}</button><button className="button secondary" disabled={reviewing} onClick={()=>setPending(null)}>Cancel</button></div></section></div>}</section>;
 }

@@ -161,6 +161,18 @@ export class HttpPhase3Client implements Phase3Client {
     return this.request<unknown>(`${this.endpointPath.verificationQueue}?${query.toString()}`);
   }
 
+  runEinCheck(verificationItemId: string, mode: "mock" | "live", mockOutcome?: string) {
+    return this.request<unknown>(`/api/v1/verification-items/${encodeURIComponent(verificationItemId)}/ein/verify`, {
+      method: "POST", body: JSON.stringify({ mode, ...(mode === "mock" && mockOutcome ? { mockOutcome } : {}) }),
+    });
+  }
+
+  reviewVerificationItem(verificationItemId: string, decision: "verified" | "rejected" | "correction_required", reason?: string) {
+    return this.request<unknown>(`/api/v1/admin/verification-items/${encodeURIComponent(verificationItemId)}/review`, {
+      method: "POST", body: JSON.stringify({ decision, reason: reason || null }),
+    });
+  }
+
   getSession() {
     return this.request<SessionClaims>(this.endpointPath.session);
   }

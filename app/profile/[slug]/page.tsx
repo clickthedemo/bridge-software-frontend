@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { LiveDirectoryDetail } from "@/components/LiveDirectory";
 import { isPhase3LiveApi } from "@/lib/phase3";
 import Image from "next/image";
@@ -23,7 +24,7 @@ export async function generateMetadata({ params }: ProfilePageProps): Promise<Me
 export default async function ProfilePage({ params }: ProfilePageProps) {
   const { slug } = await params;
   const profile = isPhase3LiveApi() ? null : getProfile(slug);
-  if (isPhase3LiveApi()) return <LiveDirectoryDetail key={slug} identifier={slug} />;
+  if (isPhase3LiveApi()) return <Suspense fallback={<p role="status">Loading profile…</p>}><LiveDirectoryDetail key={slug} identifier={slug} /></Suspense>;
   if (!profile) notFound();
 
   return (
