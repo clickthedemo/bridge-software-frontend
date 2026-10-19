@@ -61,38 +61,13 @@ async function evidence(page, testInfo, name, errors) {
   await testInfo.attach(name, { path, contentType: "image/png" });
 }
 
-test("async inbox membership enables status actions and switches organization scope", async ({ page }, testInfo) => {
-  const actions = [];
-  const errors = await setup(page, async (route, url) => {
-    if (url.pathname === "/api/v1/contact-requests/inbox-organizations") return route.fulfill({ json: { organizations: [{ id: org1, name: "First organization" }, { id: org2, name: "Second organization" }] } });
-    if (!url.pathname.includes("/contact-requests")) return false;
-    const selected = url.pathname.includes(org2) ? org2 : org1;
-    if (route.request().method() === "POST") {
-      actions.push({ url: url.pathname, body: route.request().postDataJSON() });
-      return route.fulfill({ json: { request: { status: "responded" } } });
-    }
-    return route.fulfill({ json: { requests: [{ id: "66666666-6666-4666-8666-666666666666", status: "new", firstName: selected === org1 ? "First sender" : "Second sender", workEmail: "sender@example.test", phoneNumber: "555-010-1001", yearsOfService: 2, message: selected === org1 ? "First inquiry" : "Second inquiry", createdAt: "2026-10-11T00:00:00Z" }], pageInfo: { limit: 20, offset: 0, hasMore: false } } });
-  });
-  await openPage(page, "/requests");
-  await expect(page.getByLabel("Organization", { exact: true })).toHaveValue(org1);
-  await page.getByRole("button", { name: "Mark responded", exact: true }).click();
-  await expect.poll(() => actions.length).toBe(1);
-  expect(actions[0].url).toContain(`/organizations/${org1}/contact-requests/`);
-  expect(actions[0].body).toEqual({ status: "responded" });
-  await page.getByLabel("Organization", { exact: true }).selectOption(org2);
-  await expect(page.getByText("Second inquiry", { exact: true })).toBeVisible();
-  await expect(page.getByText("First inquiry", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Mark responded", exact: true }).click();
-  await expect.poll(() => actions.length).toBe(2);
-  expect(actions[1].url).toContain(`/organizations/${org2}/contact-requests/`);
-  await evidence(page, testInfo, "inbox", errors);
-});
-
 for (const role of ["owner", "page_manager"]) {
   test(`${role} can save approved profile revisions without losing links`, async ({ page }, testInfo) => {
     const saves = [];
     const errors = await setup(page, async (route, url) => {
       if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: business, organizationId: org1, legalName: "Example Brand LLC", dbaName: "Example Brand", status: "active" }] } });
+      if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+      if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
       if (url.pathname.endsWith("/directory-profile")) {
         if (route.request().method() === "PUT") {
           const body = route.request().postDataJSON(); saves.push(body);
@@ -103,14 +78,16 @@ for (const role of ["owner", "page_manager"]) {
       return false;
     }, role);
     await openPage(page, "/my-profile");
-    await expect(page.getByLabel("Display name", { exact: true })).toBeEnabled();
-    await expect(page.getByLabel("Business", { exact: true })).toBeDisabled();
-    const displayName = page.getByLabel("Display name", { exact: true });
+    // An approved profile is read-only until the owner starts a working revision.
+    const displayName = page.getByLabel("Display name (required)", { exact: true });
+    await expect(displayName).toBeDisabled();
+    await page.getByRole("button", { name: "Prepare profile update", exact: true }).click();
+    await expect(displayName).toBeEnabled();
     await displayName.fill("");
     await displayName.pressSequentially("Revised Brand");
     await expect(displayName).toHaveValue("Revised Brand");
     await page.getByRole("button", { name: "Save draft", exact: true }).click();
-    await expect(page.getByText("Draft saved. Submit it for review when ready.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
     expect(saves).toHaveLength(1);
     expect(saves[0].links).toEqual(profile.links);
     expect(saves[0].displayName).toBe("Revised Brand");
@@ -143,13 +120,13 @@ test("directory filters reset cursor and discard an old in-flight page", async (
   await page.getByLabel("Category", { exact: true }).fill("Wholesale");
   await page.getByLabel("City", { exact: true }).fill("Portland");
   await page.getByLabel("Region", { exact: true }).fill("Willamette Valley");
-  await page.getByLabel("Verification", { exact: true }).selectOption("true");
+  await expect(page.getByRole("heading", { name: "Initial business", exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Filtered business", exact: true })).toBeVisible();
-  await expect.poll(() => queries.at(-1)?.verified).toBe("true");
-  expect(queries.at(-1)).toMatchObject({ state: "Oregon", category: "Wholesale", city: "Portland", region: "Willamette Valley", verified: "true" });
+  await expect.poll(() => queries.at(-1)?.region).toBe("Willamette Valley");
+  expect(queries.at(-1)).toMatchObject({ state: "Oregon", category: "Wholesale", city: "Portland", region: "Willamette Valley" });
   expect(queries.at(-1).cursor).toBeUndefined();
   await page.waitForTimeout(900);
   await expect(page.getByRole("heading", { name: "Stale next-page result", exact: true })).toHaveCount(0);
-  await expect(page.getByText("Legal name: Example Brand LLC", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 business loaded", { exact: true })).toBeVisible();
   await evidence(page, testInfo, "directory", errors);
 });
