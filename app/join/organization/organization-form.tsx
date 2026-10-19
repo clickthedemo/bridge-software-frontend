@@ -94,7 +94,7 @@ export function OrganizationForm() {
   const continuation = `/join/organization${requestedRole ? `?role=${encodeURIComponent(requestedRole)}` : ""}`;
   return <section className="auth-card">
     {!live && <p className="boundary-note"><strong>Preview mode.</strong> Organizations are examples and changes last only for this session.</p>}
-    <p className="boundary-note">This step saves an organization name and type. Verification and supporting-document submission are not available in this flow.</p>
+    <p className="boundary-note">This step saves an organization name and type. Next, add the business EIN, private contact and address on your business profile page so Bridge can verify you.</p>
     {unsupported && <p className="boundary-note">Organization setup for <strong>{requestedRole}</strong> is pending support. Existing memberships remain available below. <Link className="text-link" href="/join">Change role</Link></p>}
     {loading && <p role="status">Loading organizations…</p>}
     {error && <p className="form-error" role="alert">{error}</p>}

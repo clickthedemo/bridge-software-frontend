@@ -27,3 +27,10 @@ export const withPrimaryWebsite = (
   }
   return next.map((link, sortOrder) => ({ ...link, sortOrder }));
 };
+
+// Accepts 12-3456789 or 123456789 and returns the nine digits the API expects.
+export const normalizeEin = (value: string): string => {
+  const trimmed = value.trim();
+  if (!/^[0-9]{2}-?[0-9]{7}$/.test(trimmed)) throw new Error("Enter the 9-digit EIN, for example 12-3456789.");
+  return trimmed.replace("-", "");
+};

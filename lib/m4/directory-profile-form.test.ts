@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canManageDirectoryProfile, directoryProfileBusinessType } from "./directory-profile-form.ts";
+import { canManageDirectoryProfile, directoryProfileBusinessType, normalizeEin } from "./directory-profile-form.ts";
 import type { OrganizationMembership } from "@/lib/phase3";
 
 const membership = (role: OrganizationMembership["role"], status: OrganizationMembership["status"] = "active"): OrganizationMembership => ({
@@ -38,4 +38,10 @@ test("saving the website field preserves every other profile link", async () => 
   assert.equal(updated[0].label, "Main");
   assert.deepEqual(withPrimaryWebsite(links, "").map((link) => [link.url, link.sortOrder]), [["https://a.example/menu", 0], ["https://shop.example", 1]]);
   assert.deepEqual(withPrimaryWebsite([], "https://c.example").map((link) => link.url), ["https://c.example"]);
+});
+
+test("EIN intake accepts the two IRS formats and nothing else", () => {
+  assert.equal(normalizeEin(" 12-3456789 "), "123456789");
+  assert.equal(normalizeEin("123456789"), "123456789");
+  for (const bad of ["", "12-345678", "1234567890", "12 3456789", "ab-cdefghi", "123-456789"]) assert.throws(() => normalizeEin(bad), /9-digit EIN/);
 });

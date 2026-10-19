@@ -97,6 +97,52 @@ for (const role of ["owner", "page_manager"]) {
   });
 }
 
+test("owner can enter EIN, private contact and address that submission requires", async ({ page }, testInfo) => {
+  const writes = [];
+  let missing = ["private_email", "private_phone", "ein_verification", "business_address"];
+  const errors = await setup(page, async (route, url) => {
+    const method = route.request().method();
+    if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: business, organizationId: org1, legalName: "Example Brand LLC", dbaName: "Example Brand", websiteUrl: "https://example.test", employeeCount: 12, status: "active" }] } });
+    if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: missing.length === 0, missingFields: missing } });
+    if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
+    if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, status: "draft", hasPublishedVersion: false } } });
+    if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/ein`)) { writes.push([url.pathname, route.request().postDataJSON()]); return route.fulfill({ json: { businessId: business, einLastFour: "6789" } }); }
+    if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/contact`)) { writes.push([url.pathname, route.request().postDataJSON()]); missing = missing.filter((item) => !item.startsWith("private_")); return route.fulfill({ json: { contact: { businessId: business, ...route.request().postDataJSON() } } }); }
+    if (method === "PUT" && url.pathname.endsWith(`/organizations/${org1}/primary-location`)) { writes.push([url.pathname, route.request().postDataJSON()]); missing = missing.filter((item) => item !== "business_address"); return route.fulfill({ json: { location: {} } }); }
+    return false;
+  });
+  await openPage(page, "/my-profile");
+  const submit = page.getByRole("button", { name: "Submit for review", exact: true });
+  await expect(submit).toBeDisabled();
+
+  await page.getByLabel("EIN (required)", { exact: true }).fill("12-3456789");
+  await page.getByRole("button", { name: "Save EIN", exact: true }).click();
+  await expect(page.getByText("EIN ending 6789 saved, waiting for Bridge to verify", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("EIN (required)", { exact: true })).toHaveValue("");
+
+  await page.getByLabel("Business email (required; not published)", { exact: true }).fill(" Ops@Example.test ");
+  await page.getByLabel("Business phone (required; not published)", { exact: true }).fill("555-010-2000");
+  await page.getByRole("button", { name: "Save private contact", exact: true }).click();
+  await expect(page.getByText("Private business contact saved.", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Street address (required)", { exact: true }).fill("1 Example Way");
+  await page.getByLabel("Address city (required)", { exact: true }).fill("Pittsburgh");
+  await page.getByLabel("Address state (required)", { exact: true }).fill("pa");
+  await page.getByLabel("ZIP code (required)", { exact: true }).fill("15222");
+  await page.getByRole("button", { name: "Save business address", exact: true }).click();
+  await expect(page.getByText("Business address saved.", { exact: true })).toBeVisible();
+
+  expect(writes).toEqual([
+    [`/api/v1/organizations/${org1}/businesses/${business}/ein`, { ein: "123456789" }],
+    [`/api/v1/organizations/${org1}/businesses/${business}/contact`, { email: "ops@example.test", phone: "555-010-2000" }],
+    [`/api/v1/organizations/${org1}/primary-location`, { addressLine1: "1 Example Way", addressLine2: null, city: "Pittsburgh", state: "PA", postalCode: "15222", country: "US" }],
+  ]);
+  // Only Bridge's EIN check is left, so submission stays blocked with a plain reason.
+  await expect(page.getByText("Complete before submission: ein verification.", { exact: true })).toBeVisible();
+  await expect(submit).toBeDisabled();
+  await evidence(page, testInfo, "verification-details", errors);
+});
+
 test("directory filters reset cursor and discard an old in-flight page", async ({ page }, testInfo) => {
   const queries = [];
   let nextPageStarted = false;
