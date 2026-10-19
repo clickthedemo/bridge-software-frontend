@@ -9,6 +9,7 @@ import { m4Api, type DirectoryPage, type DirectoryProfile, type DirectorySort, t
 import { emptyDirectoryQuery, hasDirectoryFilters, parseDirectoryQuery, serializeDirectoryQuery, type DirectoryQueryState } from "@/lib/m4/directory-query-state";
 
 const types: Record<OrganizationType, string> = { brand: "Brand", retailer: "Retailer", dispensary: "Dispensary" };
+const emptyPage: DirectoryPage = { profiles: [], pageInfo: { nextCursor: null, hasMore: false }, nextCursor: null, hasMore: false };
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : "The directory could not be loaded.";
 
 function Identity({ profile, heading = "h2", showLogo = true }: { profile: DirectoryProfile; heading?: "h1" | "h2"; showLogo?: boolean }) {
@@ -21,12 +22,16 @@ export function LiveDirectory() {
   const search = searchParams.toString();
   const initial = useMemo(() => parseDirectoryQuery(new URLSearchParams(search)), [search]);
   const [filters, setFilters] = useState<DirectoryQueryState>(initial);
-  const [result, setResult] = useState<DirectoryPage>({ profiles: [], pageInfo: { nextCursor: null, hasMore: false }, nextCursor: null, hasMore: false });
-  const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [error, setError] = useState(""); const [revision, setRevision] = useState(0);
+  const [revision, setRevision] = useState(0); const [loadingMore, setLoadingMore] = useState(false);
+  // Every page is stored with the filter set (and retry revision) it was fetched for. A filter change
+  // therefore drops the old rows and cursor immediately, and late responses for old filters are ignored.
+  const requestKey = `${revision}:${serializeDirectoryQuery(filters)}`;
+  const [state, setState] = useState<{ key: string; page: DirectoryPage; error: string }>({ key: "", page: emptyPage, error: "" });
+  const current = state.key === requestKey;
+  const result = current ? state.page : emptyPage; const loading = !current; const error = current ? state.error : "";
   const sentinel = useRef<HTMLDivElement>(null);
 
   // Browser back/forward navigation is an external URL-state change that must replace local controls.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setFilters(initial); }, [initial]);
   useEffect(() => {
     const timer = window.setTimeout(() => { const query = serializeDirectoryQuery(filters); if (query !== search) router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false }); }, 200);
@@ -34,16 +39,16 @@ export function LiveDirectory() {
   }, [filters, pathname, router, search]);
   useEffect(() => {
     let active = true; const timer = window.setTimeout(() => {
-      setLoading(true); setError("");
-      m4Api.listDirectory({ ...filters, organizationType: filters.organizationType || undefined, limit: 20 }).then((page) => { if (active) setResult(page); }).catch((cause) => { if (active) setError(errorText(cause)); }).finally(() => { if (active) setLoading(false); });
+      m4Api.listDirectory({ ...filters, organizationType: filters.organizationType || undefined, limit: 20 }).then((page) => { if (active) setState({ key: requestKey, page, error: "" }); }).catch((cause) => { if (active) setState({ key: requestKey, page: emptyPage, error: errorText(cause) }); });
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [filters, revision]);
+  }, [filters, requestKey]);
 
   async function loadMore() {
-    if (!result.nextCursor || loadingMore) return; setLoadingMore(true); setError("");
-    try { const page = await m4Api.listDirectory({ ...filters, organizationType: filters.organizationType || undefined, limit: 20, cursor: result.nextCursor }); setResult((current) => ({ profiles: [...current.profiles, ...page.profiles.filter((next) => !current.profiles.some((item) => item.slug === next.slug))], pageInfo: page.pageInfo, nextCursor: page.nextCursor, hasMore: page.hasMore })); }
-    catch (cause) { setError(errorText(cause)); } finally { setLoadingMore(false); }
+    const key = requestKey; const cursor = result.nextCursor;
+    if (!cursor || loadingMore) return; setLoadingMore(true);
+    try { const page = await m4Api.listDirectory({ ...filters, organizationType: filters.organizationType || undefined, limit: 20, cursor }); setState((value) => value.key !== key ? value : { key, error: "", page: { profiles: [...value.page.profiles, ...page.profiles.filter((next) => !value.page.profiles.some((item) => item.slug === next.slug))], pageInfo: page.pageInfo, nextCursor: page.nextCursor, hasMore: page.hasMore } }); }
+    catch (cause) { setState((value) => value.key !== key ? value : { ...value, error: errorText(cause) }); } finally { setLoadingMore(false); }
   }
   useEffect(() => { const node = sentinel.current; if (!node || !result.hasMore) return; const observer = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) void loadMore(); }, { rootMargin: "300px" }); observer.observe(node); return () => observer.disconnect(); });
 

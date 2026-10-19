@@ -15,7 +15,9 @@ test("platform administrators hide public Settings while normal users retain it"
 test("Directory loading state is limited to active loading and preserves query state", () => {
   const directory = source("../../components/LiveDirectory.tsx");
   assert.match(directory, /\{loading && <p role="status">Loading directory/);
-  assert.match(directory, /finally\(\(\) => \{ if \(active\) setLoading\(false\)/);
+  // Loading ends only when a page for the current filter set arrives; pages for old filters are ignored.
+  assert.match(directory, /const loading = !current/);
+  assert.match(directory, /value\.key !== key \? value/);
   assert.match(directory, /serializeDirectoryQuery\(filters\)/);
   assert.match(directory, /const search = searchParams\.toString\(\)/);
   assert.match(directory, /if \(query !== search\) router\.replace/);
