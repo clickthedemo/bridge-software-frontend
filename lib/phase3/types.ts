@@ -36,7 +36,7 @@ export type OrganizationMembership = {
   organizationId: string;
   organizationName: string;
   organizationType: "brand" | "retailer" | "dispensary" | null;
-  role: "owner" | "admin" | "reviewer" | "member";
+  role: "owner" | "admin" | "page_manager" | "reviewer" | "member";
   status: "active" | "invited" | "suspended" | "removed";
 };
 
@@ -180,6 +180,8 @@ export type Phase3Client = {
   establishRecoverySession(accessToken: string, refreshToken: string): Promise<void>;
   listAdminUsers(page: number, pageSize: number): Promise<AdminUsersResponse>;
   getVerificationQueue(filters?: { status?: string; itemType?: string; limit?: number }): Promise<unknown>;
+  runEinCheck(verificationItemId: string, mode: "mock" | "live", mockOutcome?: string): Promise<unknown>;
+  reviewVerificationItem(verificationItemId: string, decision: "verified" | "rejected" | "correction_required", reason?: string): Promise<unknown>;
   getSession(): Promise<SessionClaims>;
   createUploadIntent(file: File): Promise<UploadIntent>;
   createPost(input: CreatePostInput): Promise<PostRecord>;

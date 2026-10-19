@@ -231,6 +231,16 @@ export class MockPhase3Client implements Phase3Client {
     return { entries: [] };
   }
 
+  async runEinCheck(): Promise<unknown> {
+    this.maybeFail();
+    throw new Phase3Error("unavailable", "EIN checks require the live development API.");
+  }
+
+  async reviewVerificationItem(): Promise<unknown> {
+    this.maybeFail();
+    throw new Phase3Error("unavailable", "Verification review requires the live development API.");
+  }
+
   async getSession(): Promise<SessionClaims> {
     this.maybeFail();
     if (!this.authenticated) throw new Phase3Error("unauthenticated", "Sign in to continue.");

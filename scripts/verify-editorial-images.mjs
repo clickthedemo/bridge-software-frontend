@@ -7,6 +7,27 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assetDirectory = path.join(root, "public", "bridge-editorial");
 const sourceRoots = ["app", "components", "lib"].map((directory) => path.join(root, directory));
 
+// These assets intentionally connect previews and supporting pages to their
+// canonical content. Keep the expected locations explicit so a new,
+// accidental reuse still fails this check.
+const intentionalEditorialReuse = new Map([
+  ["/bridge-editorial/community-oregon-edibles.webp", ["app/community/community-client.tsx", "components/PostPeek.tsx", "components/SuitePeek.tsx"]],
+  ["/bridge-editorial/community-michigan-retail.webp", ["app/community/community-client.tsx", "components/SuitePeek.tsx"]],
+  ["/bridge-editorial/community-california-cultivation.webp", ["app/community/community-client.tsx", "components/SuitePeek.tsx"]],
+  ["/bridge-editorial/community-michigan-testing.webp", ["app/community/community-client.tsx", "app/verified/page.tsx"]],
+  ["/bridge-editorial/community-illinois-route-planning.webp", ["app/community/community-client.tsx", "app/verified/page.tsx"]],
+  ["/bridge-editorial/community-massachusetts-meetup.webp", ["app/community/community-client.tsx", "components/SuitePeek.tsx"]],
+  ["/bridge-editorial/community-new-york-interview.webp", ["app/community/community-client.tsx", "app/verified/page.tsx"]],
+  ["/bridge-editorial/community-oregon-sample-kit.webp", ["app/community/community-client.tsx", "app/verified/page.tsx"]],
+  ["/bridge-editorial/create-promotion-studio.webp", ["app/community/community-client.tsx", "app/create/page.tsx"]],
+  ["/bridge-editorial/category-flower-genetics.webp", ["app/explore/explore-client.tsx", "components/SuitePeek.tsx"]],
+  ["/bridge-editorial/category-prerolls-vapes.webp", ["app/explore/explore-client.tsx", "components/SuitePeek.tsx"]],
+  ["/bridge-editorial/category-edibles-wellness.webp", ["app/explore/explore-client.tsx", "components/SuitePeek.tsx"]],
+  ["/bridge-editorial/profile-protected-details.webp", ["app/my-profile/page.tsx", "app/verified/page.tsx"]],
+  ["/bridge-editorial/verified-licence-check.webp", ["app/verified/page.tsx", "app/verified/page.tsx"]],
+  ["/bridge-editorial/profile-harbor-dispensary.webp", ["app/verified/page.tsx", "lib/data.ts"]],
+]);
+
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
@@ -25,7 +46,7 @@ for (const file of (await Promise.all(sourceRoots.map(sourceFiles))).flat()) {
   for (const match of source.matchAll(/\/bridge-editorial\/([a-z0-9-]+\.webp)/g)) {
     const publicPath = `/bridge-editorial/${match[1]}`;
     const locations = usage.get(publicPath) ?? [];
-    locations.push(path.relative(root, file));
+    locations.push(path.relative(root, file).replaceAll(path.sep, "/"));
     usage.set(publicPath, locations);
   }
   if (/bridge-industry-(products|networking)\.png|bridge-cultivation-lab\.png/.test(source)) {
@@ -34,7 +55,11 @@ for (const file of (await Promise.all(sourceRoots.map(sourceFiles))).flat()) {
 }
 
 for (const [publicPath, locations] of usage) {
-  if (locations.length !== 1) failures.push(`${publicPath} is assigned ${locations.length} times: ${locations.join(", ")}`);
+  const actualLocations = [...locations].sort();
+  const expectedLocations = [...(intentionalEditorialReuse.get(publicPath) ?? [locations[0]])].sort();
+  if (actualLocations.length !== expectedLocations.length || actualLocations.some((location, index) => location !== expectedLocations[index])) {
+    failures.push(`${publicPath} is assigned ${locations.length} times: ${locations.join(", ")}`);
+  }
 }
 
 const files = (await readdir(assetDirectory)).filter((file) => file.endsWith(".webp")).sort();
@@ -91,7 +116,11 @@ const report = {
   uniqueBinaryHashes: hashToFiles.size,
   nationwideOptions: states.length,
   communitySamplePosts: communityPostImages.length,
-  intentionalReuseExceptions: ["/bridge-mark.svg", "/textures/bridge-film-grain.webp"],
+  intentionalReuseExceptions: [
+    "/bridge-mark.svg",
+    "/textures/bridge-film-grain.webp",
+    ...intentionalEditorialReuse.keys(),
+  ],
   failures,
 };
 console.log(JSON.stringify(report, null, 2));
