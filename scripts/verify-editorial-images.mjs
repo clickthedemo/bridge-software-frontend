@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { editorialUsageFailures } from "./editorial-image-usage.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assetDirectory = path.join(root, "public", "bridge-editorial");
@@ -115,7 +114,6 @@ const report = {
   editorialAssets: files.length,
   assignedEditorialPaths: usage.size,
   uniqueBinaryHashes: hashToFiles.size,
-  reviewedEditorialReuse: reviewedReuse.uses.length,
   nationwideOptions: states.length,
   communitySamplePosts: communityPostImages.length,
   intentionalReuseExceptions: [

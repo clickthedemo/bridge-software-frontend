@@ -10,22 +10,6 @@ import { emptyDirectoryQuery, hasDirectoryFilters, parseDirectoryQuery, serializ
 
 const types: Record<OrganizationType, string> = { brand: "Brand", retailer: "Retailer", dispensary: "Dispensary" };
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : "The directory could not be loaded.";
-type Filters = { q: string; organizationType: OrganizationType | ""; category: string; state: string; city: string; region: string; verified: "" | "true" | "false"; sort: DirectorySort };
-const initialFilters: Filters = { q: "", organizationType: "", category: "", state: "", city: "", region: "", verified: "", sort: "name_asc" };
-function apiFilters(filters: Filters) {
-  return { ...filters, organizationType: filters.organizationType || undefined, verified: filters.verified === "" ? undefined : filters.verified === "true", limit: 20 };
-}
-function webUrl(value: string) {
-  try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? url.href : null; } catch { return null; }
-}
-function logoUrl(value: string | null) {
-  if (!value) return null;
-  if (value.startsWith("/api/v1/directory/profiles/")) {
-    const base = getBridgeApiBase();
-    return base ? new URL(value, base).href : null;
-  }
-  return webUrl(value);
-}
 
 function Identity({ profile, heading = "h2", showLogo = true }: { profile: DirectoryProfile; heading?: "h1" | "h2"; showLogo?: boolean }) {
   const Heading = heading;
@@ -38,10 +22,7 @@ export function LiveDirectory() {
   const initial = useMemo(() => parseDirectoryQuery(new URLSearchParams(search)), [search]);
   const [filters, setFilters] = useState<DirectoryQueryState>(initial);
   const [result, setResult] = useState<DirectoryPage>({ profiles: [], pageInfo: { nextCursor: null, hasMore: false }, nextCursor: null, hasMore: false });
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [error, setError] = useState(""); const [revision, setRevision] = useState(0);
   const sentinel = useRef<HTMLDivElement>(null);
 
   // Browser back/forward navigation is an external URL-state change that must replace local controls.
@@ -77,7 +58,7 @@ export function LiveDirectory() {
     <label htmlFor="directory-region">Region</label><input id="directory-region" maxLength={100} value={filters.region} onChange={(event) => update("region", event.target.value)} />
     <label htmlFor="directory-sort">Sort</label><select id="directory-sort" value={filters.sort} onChange={(event) => update("sort", event.target.value as DirectorySort)}><option value="name_asc">Name A–Z</option><option value="name_desc">Name Z–A</option></select>
     <button className="text-button" disabled={!hasDirectoryFilters(filters)} onClick={() => setFilters(emptyDirectoryQuery)} type="button">Clear filters</button><Link className="button secondary" href="/my-profile">Manage your profile</Link>
-  </aside><section aria-busy={loading}>{loading && <p role="status">Loading directory…</p>}{error && <div className="empty-state"><p className="form-error" role="alert">The Directory could not be loaded. {error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div>}{!loading && !error && !result.profiles.length && <div className="empty-state"><h2>No matching businesses</h2><p>Try changing or clearing the current filters.</p><button className="button secondary" disabled={!hasDirectoryFilters(filters)} onClick={() => setFilters(emptyDirectoryQuery)} type="button">Clear filters</button></div>}<p className="result-count" aria-live="polite">{result.profiles.length} business{result.profiles.length === 1 ? "" : "es"} loaded</p><div className="card-grid two">{result.profiles.map((profile) => <article className="profile-card" key={profile.slug}><Identity profile={profile} /><Link className="button secondary" href={`/profile/${encodeURIComponent(profile.slug)}${returnQuery ? `?from=${encodeURIComponent(returnQuery)}` : ""}`}>View profile</Link></article>)}</div><div ref={sentinel}>{result.hasMore && <button className="button secondary" disabled={loadingMore} onClick={() => void loadMore()} type="button">{loadingMore ? "Loading more…" : "Load more"}</button>}</div></section></div>;
+  </aside><section aria-busy={loading}>{loading && <p role="status">Loading directory…</p>}{error && <div className="empty-state"><p className="form-error" role="alert">The Directory could not be loaded. {error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div>}{!loading && !error && !result.profiles.length && (hasDirectoryFilters(filters) ? <div className="empty-state"><h2>No matching businesses</h2><p>Try changing or clearing the current filters.</p><button className="button secondary" onClick={() => setFilters(emptyDirectoryQuery)} type="button">Clear filters</button></div> : <div className="empty-state"><h2>No businesses published yet</h2><p>Approved business profiles appear here once they are published.</p></div>)}<p className="result-count" aria-live="polite">{result.profiles.length} business{result.profiles.length === 1 ? "" : "es"} loaded</p><div className="card-grid two">{result.profiles.map((profile) => <article className="profile-card" key={profile.slug}><Identity profile={profile} /><Link className="button secondary" href={`/profile/${encodeURIComponent(profile.slug)}${returnQuery ? `?from=${encodeURIComponent(returnQuery)}` : ""}`}>View profile</Link></article>)}</div><div ref={sentinel}>{result.hasMore && <button className="button secondary" disabled={loadingMore} onClick={() => void loadMore()} type="button">{loadingMore ? "Loading more…" : "Load more"}</button>}</div></section></div>;
 }
 
 export function LiveDirectoryDetail({ identifier }: { identifier: string }) {
