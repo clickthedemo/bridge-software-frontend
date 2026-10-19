@@ -25,3 +25,17 @@ test("the profile business type comes from the organization membership", () => {
   assert.equal(directoryProfileBusinessType(membership("owner")), "retailer");
   assert.equal(directoryProfileBusinessType(undefined), "brand");
 });
+
+test("saving the website field preserves every other profile link", async () => {
+  const { withPrimaryWebsite } = await import("./directory-profile-form.ts");
+  const links = [
+    { type: "website" as const, label: "Main", url: "https://a.example", sortOrder: 0 },
+    { type: "menu" as const, label: "Menu", url: "https://a.example/menu", sortOrder: 1 },
+    { type: "website" as const, label: "Shop", url: "https://shop.example", sortOrder: 2 },
+  ];
+  const updated = withPrimaryWebsite(links, " https://b.example ");
+  assert.deepEqual(updated.map((link) => link.url), ["https://b.example", "https://a.example/menu", "https://shop.example"]);
+  assert.equal(updated[0].label, "Main");
+  assert.deepEqual(withPrimaryWebsite(links, "").map((link) => [link.url, link.sortOrder]), [["https://a.example/menu", 0], ["https://shop.example", 1]]);
+  assert.deepEqual(withPrimaryWebsite([], "https://c.example").map((link) => link.url), ["https://c.example"]);
+});

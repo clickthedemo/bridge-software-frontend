@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { m4Api, mergeSavedDirectoryProfile, type Business, type DirectoryProfile, type DirectoryProfileInput } from "@/lib/m4/api";
-import { canManageDirectoryProfile, directoryProfileBusinessType } from "@/lib/m4/directory-profile-form";
+import { canManageDirectoryProfile, directoryProfileBusinessType, withPrimaryWebsite } from "@/lib/m4/directory-profile-form";
 import { validateDirectoryLogo } from "@/lib/m4/logo-upload";
 import { ProfileLogo } from "@/components/ProfileLogo";
 
@@ -106,8 +106,7 @@ export function DirectoryEditor() {
   async function save(event: FormEvent) {
     event.preventDefault(); setBusy("save"); setError(""); setNotice("");
     const categoryValues = categories.split(",").map((value) => value.trim()).filter(Boolean);
-    const nonWebsite = draft.links.filter((link) => link.type !== "website");
-    const links = website.trim() ? [{ type: "website" as const, label: "Website", url: website.trim(), sortOrder: 0 }, ...nonWebsite.map((link, index) => ({ ...link, sortOrder: index + 1 }))] : nonWebsite;
+    const links = withPrimaryWebsite(draft.links, website);
     try { const saved = await m4Api.saveProfile(selectedOrganizationId, { ...draft, businessType: directoryProfileBusinessType(selectedMembership), slug: draft.slug.trim().toLowerCase(), displayName: draft.displayName.trim(), summary: draft.summary?.trim() || null, story: draft.story?.trim() || null, categories: categoryValues, links }); setProfile((current) => mergeSavedDirectoryProfile(current, saved)); setDraft((value) => ({ ...value, businessType: saved.businessType ?? directoryProfileBusinessType(selectedMembership), categories: categoryValues, links })); if (canSubmit) { const readiness = await m4Api.getProfileSubmissionReadiness(selectedOrganizationId); setMissingSubmissionFields(readiness?.missingFields ?? []); } setNotice("Draft saved."); }
     catch (cause) { setError(message(cause)); } finally { setBusy(""); }
   }
