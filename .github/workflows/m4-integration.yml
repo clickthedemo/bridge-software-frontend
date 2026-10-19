@@ -1,7 +1,7 @@
 name: Bridge M4 integration checks
 on:
   pull_request:
-    branches: [development, feature/m4-source-recovery-20261011]
+    branches: [development, production, feature/m4-source-recovery-20261011]
 permissions:
   contents: read
 concurrency:
