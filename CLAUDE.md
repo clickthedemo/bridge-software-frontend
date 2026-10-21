@@ -128,3 +128,5 @@ Scope Playwright error assertions to the intended form or `.form-error[role="ale
 - A successful write stays successful if its follow-up readiness read fails. A selected logo preview wins over an older working-logo read, and successful removal clears the file input and preview.
 - Admin licence decisions show the licence number and holder references. Explicit queue reload clears pending review selection; loading transitions reset notification focus targets before rows remount.
 - Preserve reviewed routing controls and editorial validation metadata during vendor integration. Routing candidates stay bounded to active same-organization sales representatives and the configured valid administrator.
+
+- Notification focus waits for an inert age-gate ancestor to unlock; highlighting alone does not prove keyboard focus. Keep the deep-link focus assertion before and after a queue reload.
