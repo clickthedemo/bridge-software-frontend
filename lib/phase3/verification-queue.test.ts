@@ -8,6 +8,8 @@ const entry = {
   itemType: "ein", status: "pending", verificationMethod: "manual",
   caseCreatedAt: "2026-09-01T12:00:00Z", caseSubmittedAt: "2026-09-02T12:00:00Z",
   itemCreatedAt: "2026-09-01T12:00:00Z", itemUpdatedAt: "2026-09-02T12:00:00Z", reviewedAt: null,
+  einCheckState: "not_checked", einCheckMode: null, einLastCheckedAt: null,
+  einSafeReason: null, einResponseCode: null, einProviderReference: null,
 };
 
 test("backend entries retain distinct item IDs, shared case IDs, and submitted timestamp", () => {
@@ -17,10 +19,11 @@ test("backend entries retain distinct item IDs, shared case IDs, and submitted t
     { id: "item-2", caseId: "case-1", submittedAt: null },
   ]);
   assert.deepEqual(normalizeVerificationQueue({ entries: [] }), []);
+  assert.equal(rows[0]?.updatedAt, entry.itemUpdatedAt);
 });
 
 test("malformed queues cannot be mistaken for empty successful queues", () => {
-  for (const payload of [null, {}, { items: [] }, { entries: [null] }, { entries: [{}] }, { entries: [entry, entry] }, { entries: [{ ...entry, caseSubmittedAt: "bad" }] }]) {
+  for (const payload of [null, {}, { items: [] }, { entries: [null] }, { entries: [{}] }, { entries: [entry, entry] }, { entries: [{ ...entry, caseSubmittedAt: "bad" }] }, { entries: [{ ...entry, itemUpdatedAt: "bad" }] }]) {
     assert.throws(() => normalizeVerificationQueue(payload), /response was invalid/);
   }
 });

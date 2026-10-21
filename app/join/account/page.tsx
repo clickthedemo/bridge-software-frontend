@@ -1,9 +1,10 @@
 import { Suspense } from "react";
 import { AccountForm } from "./account-form";
+import { JoinOnboardingGate } from "../join-onboarding-gate";
 
 export default function JoinAccountPage() {
   return (
-    <div className="page shell auth-page">
+    <JoinOnboardingGate><div className="page shell auth-page">
       <div className="join-auth-layout">
         <header className="join-auth-heading">
           <p className="eyebrow">Account creation</p>
@@ -12,6 +13,6 @@ export default function JoinAccountPage() {
         </header>
         <Suspense fallback={<p>Loading account form…</p>}><AccountForm /></Suspense>
       </div>
-    </div>
+    </div></JoinOnboardingGate>
   );
 }

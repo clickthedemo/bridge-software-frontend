@@ -26,7 +26,7 @@ for (const file of (await Promise.all(sourceRoots.map(sourceFiles))).flat()) {
   for (const match of source.matchAll(/\/bridge-editorial\/([a-z0-9-]+\.webp)/g)) {
     const publicPath = `/bridge-editorial/${match[1]}`;
     const locations = usage.get(publicPath) ?? [];
-    locations.push(path.relative(root, file));
+    locations.push(path.relative(root, file).replaceAll(path.sep, "/"));
     usage.set(publicPath, locations);
   }
   if (/bridge-industry-(products|networking)\.png|bridge-cultivation-lab\.png/.test(source)) {

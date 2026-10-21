@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ExploreClient } from "./explore-client";
 export default function ExplorePage() {
   return (
@@ -8,7 +9,7 @@ export default function ExplorePage() {
         <p className="lede small">Brands, dispensaries, cultivators, sales teams, and service partners across all 50 states and D.C.</p>
           <p className="handwrite right">every state, every role, one search</p>
       </div>
-      <ExploreClient />
+      <Suspense fallback={<p role="status">Loading directory…</p>}><ExploreClient /></Suspense>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  agentRules: false,
   // Staging builds (scripts/build-staging.sh) export a static site per
   // direction; normal builds keep the default server output. Trailing slashes
   // make the export a plain folder/index.html tree any static host serves.
