@@ -217,9 +217,11 @@ test("profile detail recovers after a failed read and retry", async ({ page }) =
   });
   await openPage(page, "/profile/example-brand");
   await expect(page.getByRole("heading", { name: "Profile unavailable", exact: true })).toBeVisible();
+  await expect(page.locator("main [role='alert']")).toContainText("Temporary failure");
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Example Brand", exact: true })).toBeVisible();
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Next keeps an empty route-announcement alert outside the application content.
+  await expect(page.locator("main [role='alert']")).toHaveCount(0);
 });
 
 test("failed preferences cannot save defaults and retry restores server choices", async ({ page }) => {
@@ -234,12 +236,13 @@ test("failed preferences cannot save defaults and retry restores server choices"
   });
   await openPage(page, "/notifications/preferences");
   await expect(page.getByRole("button", { name: "Retry preferences", exact: true })).toBeVisible();
+  await expect(page.locator("main [role='alert']")).toContainText("Temporary failure");
   await expect(page.getByRole("button", { name: "Save preferences", exact: true })).toBeDisabled();
   expect(writes).toBe(0);
   await page.getByRole("button", { name: "Retry preferences", exact: true }).click();
   await expect(page.getByRole("button", { name: "Save preferences", exact: true })).toBeEnabled();
   for (const input of await page.locator('form input[type="checkbox"]').all()) await expect(input).not.toBeChecked();
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator("main [role='alert']")).toHaveCount(0);
 });
 
 test("sales-rep page managers use assigned links without loading an organization inbox", async ({ page }) => {
