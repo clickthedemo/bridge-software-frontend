@@ -4863,7 +4863,7 @@ body:has(.mandatory-review-backdrop) .bridge-tabbar {
 }
 
 .admin-directory-card {
-  cursor: pointer;
+  cursor: default;
   transition: border-color .18s ease, box-shadow .18s ease;
 }
 
@@ -5511,4 +5511,19 @@ body:has(.mandatory-review-backdrop) .bridge-tabbar {
 
 .feed-toolbar {
   align-items: center;
+}
+
+.admin-directory-toggle {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.admin-directory-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }

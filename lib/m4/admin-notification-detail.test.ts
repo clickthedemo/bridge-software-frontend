@@ -30,10 +30,11 @@ test("opening a notification preserves mark-as-read before navigation", () => {
   assert.match(notifications, /finally \{ setBusy\(""\); router\.push\(item\.action\.href\); \}/);
 });
 
-test("Directory cards are clickable, keyboard operable, and expose selection state", () => {
+test("Directory disclosure uses a native toggle without nesting interactive roles", () => {
   assert.match(directory, /className={`admin-review-card admin-directory-card/);
-  assert.match(directory, /role="button" tabIndex={0}/);
-  assert.match(directory, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.match(directory, /className="admin-directory-toggle" type="button"/);
+  assert.match(directory, /aria-controls={`profile-details-/);
+  assert.doesNotMatch(directory, /role="button"|onKeyDown=/);
   assert.match(directory, /aria-expanded={selected}/);
 });
 
