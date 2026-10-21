@@ -124,3 +124,32 @@ test("admin notification lookup returns the rendered page containing records bey
     }
   } finally { globalThis.fetch = original; delete process.env.NEXT_PUBLIC_BRIDGE_API_BASE; }
 });
+
+
+test("contact routing uses scoped candidates and existing GET/PUT without leaking roster fields", { concurrency: false }, async () => {
+  process.env.NEXT_PUBLIC_BRIDGE_API_BASE = "https://api.example.test";
+  const original = globalThis.fetch;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const salesRepresentative = { membershipId: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222", displayName: "Synthetic rep" };
+  const bridgeAdmin = { userId: "33333333-3333-4333-8333-333333333333", displayName: "Assigned admin" };
+  globalThis.fetch = async (input, init) => {
+    const url = String(input); calls.push({ url, init });
+    return new Response(JSON.stringify(url.endsWith("/candidates")
+      ? { candidates: { salesRepresentatives: [{ ...salesRepresentative, email: "private@example.test" }], bridgeAdmin, globalAdmins: [bridgeAdmin] } }
+      : { routing: { salesRepresentative, bridgeAdmin } }), { headers: { "content-type": "application/json" } });
+  };
+  try {
+    const base = "https://api.example.test/api/v1/organizations/org-a/directory-profile/contact-routing";
+    assert.deepEqual(await m4Api.contactRoutingCandidates("org-a"), { salesRepresentatives: [salesRepresentative], bridgeAdmin });
+    assert.deepEqual(await m4Api.getContactRouting("org-a"), { salesRepresentative, bridgeAdmin });
+    await m4Api.updateContactRouting("org-a", { salesRepresentativeMembershipId: null, bridgeAdminUserId: null });
+    assert.deepEqual(calls.map((call) => [call.url, call.init?.method ?? "GET", call.init?.credentials]), [[base + "/candidates", "GET", "include"], [base, "GET", "include"], [base, "PUT", "include"]]);
+    assert.deepEqual(JSON.parse(String(calls[2]?.init?.body)), { salesRepresentativeMembershipId: null, bridgeAdminUserId: null });
+    for (const status of [400, 403, 404, 503]) {
+      globalThis.fetch = async () => new Response(JSON.stringify({ error: "ROUTING_FAILED", message: "Retry routing." }), { status });
+      await assert.rejects(() => m4Api.contactRoutingCandidates("org-a"), (error) => error instanceof M4ApiError && error.status === status);
+    }
+    globalThis.fetch = async () => new Response(JSON.stringify({ candidates: { salesRepresentatives: [{}], bridgeAdmin: null } }));
+    await assert.rejects(() => m4Api.contactRoutingCandidates("org-a"), (error) => error instanceof M4ApiError && error.status === 502);
+  } finally { globalThis.fetch = original; delete process.env.NEXT_PUBLIC_BRIDGE_API_BASE; }
+});

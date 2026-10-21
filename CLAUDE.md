@@ -121,3 +121,10 @@ See `docs/claude-workflow.md` for the full human/AI operating model.
 ## Browser error assertions, October 21, 2026
 
 Scope Playwright error assertions to the intended form or `.form-error[role="alert"]`. Next.js also renders `#__next-route-announcer__` with `role="alert"`, so an unscoped `getByRole("alert")` matches both.
+
+## M4 review corrections, October 21, 2026
+
+- Organization-scoped forms and member lists reset on scope changes, ignore late responses and hide mutations until the current read succeeds; read failures expose retry.
+- A successful write stays successful if its follow-up readiness read fails. A selected logo preview wins over an older working-logo read, and successful removal clears the file input and preview.
+- Admin licence decisions show the licence number and holder references. Explicit queue reload clears pending review selection; loading transitions reset notification focus targets before rows remount.
+- Preserve reviewed routing controls and editorial validation metadata during vendor integration. Routing candidates stay bounded to active same-organization sales representatives and the configured valid administrator.
