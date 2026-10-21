@@ -207,6 +207,48 @@ test("failed EIN queue read offers retry without an empty success state", async 
   fail = false; await page.getByRole("button", { name: "Retry verification queue", exact: true }).click();
   await expect(page.locator("#verification-item-focus")).toBeVisible(); await expect(alerts(page)).toHaveCount(0);
 });
+
+test("EIN review conflicts remain visible after reload and clear an earlier success notice", async ({ page }) => {
+  let rows = [{ ...verification, einCheckState: "match" }], reviews = 0;
+  await setup(page, (route, url) => {
+    if (url.pathname === "/api/v1/admin/business-licenses") return route.fulfill({ json: { licenses: [] } });
+    if (url.pathname === "/api/v1/admin/verification-queue") return route.fulfill({ json: { entries: rows } });
+    if (url.pathname.endsWith("/review") && route.request().method() === "POST") {
+      reviews += 1;
+      if (reviews === 1) { rows = [{ ...verification, verificationItemId: "item-next", einCheckState: "match" }]; return route.fulfill({ json: {} }); }
+      return route.fulfill({ status: 409, json: { error: "VERIFICATION_ITEM_CONFLICT", message: "Record changed. Review was not saved." } });
+    }
+    return false;
+  }, { admin: true });
+  page.on("dialog", (dialog) => dialog.accept());
+  await openPage(page, "/admin/verification");
+  await page.locator("#verification-item-focus").getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(page.getByText("Verification review saved.", { exact: true })).toBeVisible();
+  const next = page.locator("#verification-item-next");
+  await next.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(alerts(page)).toHaveText("Record changed. Review was not saved.");
+  await expect(next).toBeVisible();
+  await expect(page.getByText("Verification review saved.", { exact: true })).toHaveCount(0);
+  await expect(next.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+  expect(reviews).toBe(2);
+});
+
+test("failed mock EIN action preserves the readable queue", async ({ page }) => {
+  await setup(page, (route, url) => {
+    if (url.pathname === "/api/v1/admin/business-licenses") return route.fulfill({ json: { licenses: [] } });
+    if (url.pathname === "/api/v1/admin/verification-queue") return route.fulfill({ json: { entries: [verification] } });
+    if (url.pathname.endsWith("/ein/verify")) { expect(route.request().postDataJSON().mode).toBe("mock"); return failure(route, "Mock check unavailable"); }
+    return false;
+  }, { admin: true });
+  await openPage(page, "/admin/verification");
+  await page.getByRole("combobox", { name: "EIN lookup", exact: true }).selectOption("mock");
+  const row = page.locator("#verification-item-focus");
+  await row.getByRole("button", { name: "Run check", exact: true }).click();
+  await expect(alerts(page)).toHaveText("Mock check unavailable");
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button", { name: "Run check", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Retry verification queue", exact: true })).toHaveCount(0);
+});
 test("verification deep link refocuses after filter reload with identical row IDs", async ({ page }) => {
   const started = deferred(), release = deferred(); let hold = false;
   await setup(page, async (route, url) => {
@@ -218,7 +260,8 @@ test("verification deep link refocuses after filter reload with identical row ID
   const row = page.locator("#verification-item-focus");
   await expect(row).toBeFocused(); await expect(row).toHaveClass(/notification-focus/);
   await expect(page.getByRole("combobox", { name: "Status", exact: true })).toHaveValue("pending");
-  hold = true; await page.getByRole("combobox", { name: "Item type", exact: true }).selectOption("ein"); await started.promise;
+  await expect(page.getByRole("combobox", { name: "Item type", exact: true })).toHaveValue("ein");
+  hold = true; await page.getByRole("combobox", { name: "Item type", exact: true }).selectOption(""); await started.promise;
   await expect(row).toHaveCount(0); release.resolve();
   await expect(row).toBeFocused(); await expect(row).toHaveClass(/notification-focus/);
 });

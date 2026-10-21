@@ -130,3 +130,5 @@ Scope Playwright error assertions to the intended form or `.form-error[role="ale
 - Preserve reviewed routing controls and editorial validation metadata during vendor integration. Routing candidates stay bounded to active same-organization sales representatives and the configured valid administrator.
 
 - Notification focus waits for an inert age-gate ancestor to unlock; highlighting alone does not prove keyboard focus. Keep the deep-link focus assertion before and after a queue reload.
+
+- Keep EIN read errors separate from action errors: a conflict reload preserves the failed-decision explanation, and each new decision clears an older success notice. Routing saves only current eligible candidates. Browser reload tests must change the filter value; preserve Windows path normalization in editorial checks.

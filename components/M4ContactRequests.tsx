@@ -83,7 +83,7 @@ function ContactRoutingForm({ organizationId, onRetry }: { organizationId: strin
     if (!routing || !candidates || saveInFlight.current || busy || (!salesChanged && !removeAdmin)) return;
     saveInFlight.current = true; setBusy(true); setError(""); setSaved(false);
     try {
-      const next = await m4Api.updateContactRouting(organizationId, { salesRepresentativeMembershipId: salesMembershipId || null, bridgeAdminUserId: removeAdmin ? null : currentAdmin?.userId ?? null });
+      const next = await m4Api.updateContactRouting(organizationId, { salesRepresentativeMembershipId: candidates.salesRepresentatives.some((item) => item.membershipId === salesMembershipId) ? salesMembershipId : null, bridgeAdminUserId: removeAdmin ? null : currentAdmin?.userId ?? null });
       setRouting(next); setCandidates((current) => current ? { ...current, bridgeAdmin: next.bridgeAdmin } : current); setSalesMembershipId(next.salesRepresentative?.membershipId ?? ""); setRemoveAdmin(false); setSaved(true);
     } catch (cause) { setError(errorText(cause)); } finally { saveInFlight.current = false; setBusy(false); }
   }

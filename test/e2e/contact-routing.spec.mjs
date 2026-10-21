@@ -74,6 +74,20 @@ function routingFixture(route, url, current, writes) {
   }
   return route.fulfill({ json: { routing: current[organizationId] } });
 }
+
+test("removing the configured admin clears an ineligible representative instead of resubmitting it", async ({ page }) => {
+  const staleRep = { ...rep1, membershipId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" };
+  const current = { [org1]: { salesRepresentative: staleRep, bridgeAdmin: admin }, [org2]: { salesRepresentative: otherRep, bridgeAdmin: null } };
+  const writes = [];
+  const state = await setup(page, (route, url) => routingFixture(route, url, current, writes));
+  await openPage(page); await routingToggle(page).click();
+  await expect(salesSelector(page)).toHaveValue(staleRep.membershipId);
+  await page.getByRole("checkbox", { name: "Remove assigned Bridge administrator", exact: true }).check();
+  await saveAndWait(page, writes, 1);
+  expect(writes).toEqual([{ path: routingPath(org1), body: { salesRepresentativeMembershipId: null, bridgeAdminUserId: null } }]);
+  await expect(salesSelector(page)).toHaveValue("");
+  await evidence(page, state);
+});
 async function saveAndWait(page, writes, count) {
   await saveButton(page).click();
   await expect.poll(() => writes.length).toBe(count);
