@@ -16,11 +16,11 @@ const profile = {
   ],
   logoUrl: null, status: "approved", hasPublishedVersion: true, legalName: "Example Brand LLC", dbaName: "Example Brand", verified: true,
 };
-function identity(role = "owner", accountType = "standard") {
-  return { user: { id: "11111111-1111-4111-8111-111111111111", email: "owner@example.test", accountType, platformRoles: [], profile: { displayName: "Example Owner", phone: null } },
+function identity(role = "owner", accountType = "standard", platformRoles = []) {
+  return { user: { id: "11111111-1111-4111-8111-111111111111", email: "owner@example.test", accountType, platformRoles, profile: { displayName: "Example Owner", phone: null } },
     memberships: [org1, org2].map((organizationId, index) => ({ organizationId, organizationName: index ? "Second organization" : "First organization", organizationType: "brand", role, status: "active" })) };
 }
-async function setup(page, handler, role = "owner", accountType = "standard") {
+async function setup(page, handler, role = "owner", accountType = "standard", platformRoles = []) {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (entry) => { if (entry.type() === "error") errors.push(`${entry.text()} ${entry.location().url}`); });
@@ -33,7 +33,7 @@ async function setup(page, handler, role = "owner", accountType = "standard") {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/auth/me") {
       await new Promise((resolve) => setTimeout(resolve, 250));
-      return route.fulfill({ json: identity(role, accountType) });
+      return route.fulfill({ json: identity(role, accountType, platformRoles) });
     }
     if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
     const result = await handler(route, url);
@@ -274,3 +274,105 @@ for (const hasBusiness of [false, true]) {
     await expect(page.getByRole("button", { name: "Save draft", exact: true })).toHaveCount(0);
   });
 }
+
+
+test("delayed business A contact never replaces business B or its saved payload", async ({ page }) => {
+  const businessB = "77777777-7777-4777-8777-777777777777";
+  const writes = [];
+  let releaseA, markARequested;
+  const aRequested = new Promise((resolve) => { markARequested = resolve; });
+  const aGate = new Promise((resolve) => { releaseA = resolve; });
+  await setup(page, async (route, url) => {
+    if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [business, businessB].map((id) => ({ id, organizationId: org1, legalName: id === business ? "Business A" : "Business B", status: "active" })) } });
+    if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, status: "draft", hasPublishedVersion: false } } });
+    if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+    if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
+    if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
+    if (url.pathname.endsWith("/contact")) {
+      const id = url.pathname.includes(businessB) ? businessB : business;
+      if (route.request().method() === "PUT") {
+        writes.push({ businessId: id, ...route.request().postDataJSON() });
+        return route.fulfill({ json: { contact: writes.at(-1) } });
+      }
+      if (id === business) { markARequested(); await aGate; }
+      return route.fulfill({ json: { contact: { businessId: id, email: id === business ? "a@example.test" : "b@example.test", phone: id === business ? "555-010-1000" : "555-010-2000" } } });
+    }
+    return false;
+  });
+  await openPage(page, "/my-profile");
+  await aRequested;
+  await expect(page.getByRole("button", { name: "Save private contact", exact: true })).toBeDisabled();
+  await page.getByLabel("Business (required)", { exact: true }).selectOption(businessB);
+  await expect(page.getByLabel("Business email (required; not published)", { exact: true })).toHaveValue("b@example.test");
+  const oldResponse = page.waitForResponse((response) => response.url().endsWith(`/businesses/${business}/contact`));
+  releaseA();
+  await oldResponse;
+  // Flush the released response's React work before verifying the current selection.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.getByLabel("Business email (required; not published)", { exact: true })).toHaveValue("b@example.test");
+  await expect(page.getByLabel("Business phone (required; not published)", { exact: true })).toHaveValue("555-010-2000");
+  await page.getByRole("button", { name: "Save private contact", exact: true }).click();
+  await expect(page.getByText("Private business contact saved.", { exact: true })).toBeVisible();
+  expect(writes).toEqual([{ businessId: businessB, email: "b@example.test", phone: "555-010-2000" }]);
+});
+
+for (const key of ["Enter", "Space"]) {
+  test(`admin nested review action and profile link work with ${key}`, async ({ page }) => {
+    let approvals = 0;
+    const record = { id: profile.id, organization: { id: org1, name: "Example organization" }, business: { id: business, legalName: "Example Brand LLC", dbaName: null }, workingProfile: { ...profile, hasLogo: false }, status: "pending_review", submittedAt: "2026-10-21T10:00:00Z", hasPublishedVersion: true, verificationEligibility: { eligible: true, einVerified: true, organizationActive: true, businessActive: true } };
+    await setup(page, async (route, url) => {
+      if (url.pathname === "/api/v1/admin/directory-profiles") return route.fulfill({ json: { profiles: [record], pageInfo: { limit: 20, offset: 0, hasMore: false } } });
+      if (url.pathname.endsWith(`/directory-profiles/${profile.id}/approve`)) { approvals++; return route.fulfill({ json: {} }); }
+      if (url.pathname === "/api/v1/directory/profiles/example-brand") return route.fulfill({ json: { profile } });
+      return false;
+    }, "owner", "standard", ["admin"]);
+    await openPage(page, "/admin/directory-profiles");
+    const approve = page.getByRole("button", { name: "Approve", exact: true });
+    await expect(approve).toBeVisible();
+    page.once("dialog", (dialog) => dialog.accept());
+    await approve.focus(); await approve.press(key);
+    await expect(page.getByText("Approve completed for Example Brand.", { exact: true })).toBeVisible();
+    expect(approvals).toBe(1);
+    const card = page.locator(".admin-directory-card");
+    await card.focus(); await card.press("Enter");
+    const link = page.getByRole("link", { name: "Open current published profile", exact: true });
+    await expect(link).toBeVisible();
+    await link.focus(); await link.press("Enter");
+    await expect(page).toHaveURL(/\/profile\/example-brand$/);
+  });
+}
+
+test("EIN lookup completion refreshes the currently selected status", async ({ page }) => {
+  let releaseLookup, markLookupStarted;
+  const lookupStarted = new Promise((resolve) => { markLookupStarted = resolve; });
+  const lookupGate = new Promise((resolve) => { releaseLookup = resolve; });
+  const queueStatuses = [];
+  const entry = (status) => ({ verificationCaseId: `case-${status}`, verificationItemId: `item-${status}`, organizationName: "Example organization", businessLegalName: status === "verified" ? "Verified business" : "Pending business", itemType: "ein", status, caseSubmittedAt: "2026-10-21T10:00:00Z", itemUpdatedAt: "2026-10-21T10:00:00Z", einCheckState: status === "verified" ? "match" : "not_checked", einCheckMode: null, einLastCheckedAt: null, einSafeReason: null });
+  await setup(page, async (route, url) => {
+    if (url.pathname === "/api/v1/admin/verification-queue") {
+      const status = url.searchParams.get("status") || "pending"; queueStatuses.push(status);
+      return route.fulfill({ json: { entries: [entry(status)] } });
+    }
+    if (url.pathname === "/api/v1/admin/business-licenses") return route.fulfill({ json: { licenses: [] } });
+    if (url.pathname.endsWith("/ein/verify")) {
+      expect(route.request().postDataJSON().mode).toBe("mock"); markLookupStarted(); await lookupGate;
+      return route.fulfill({ json: {} });
+    }
+    return false;
+  }, "owner", "standard", ["admin"]);
+  await openPage(page, "/admin/verification");
+  await page.getByLabel("Status", { exact: true }).selectOption("pending");
+  await page.getByLabel("EIN lookup", { exact: true }).selectOption("mock");
+  await page.getByRole("button", { name: "Run check", exact: true }).click();
+  await lookupStarted;
+  await page.getByLabel("Status", { exact: true }).selectOption("verified");
+  await expect(page.getByText("Verified business", { exact: true })).toBeVisible();
+  const countBeforeCompletion = queueStatuses.length;
+  releaseLookup();
+  await expect.poll(() => queueStatuses.length).toBeGreaterThan(countBeforeCompletion);
+  await expect(page.getByText("Mock test completed without contacting Cobalt. Review the refreshed result before approving.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Status", { exact: true })).toHaveValue("verified");
+  await expect(page.getByText("Verified business", { exact: true })).toBeVisible();
+  await expect(page.getByText("Pending business", { exact: true })).toHaveCount(0);
+  expect(queueStatuses.slice(countBeforeCompletion)).toEqual(["verified"]);
+});
