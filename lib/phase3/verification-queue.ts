@@ -6,6 +6,7 @@ export type VerificationQueueRow = {
   itemType: string;
   status: string;
   submittedAt: string | null;
+  updatedAt: string;
   checkState: "not_checked" | "checking" | "match" | "no_match" | "incomplete" | "manual_review" | "unavailable";
   checkMode: "mock" | "live" | null;
   lastCheckedAt: string | null;
@@ -24,9 +25,10 @@ export function normalizeVerificationQueue(payload: unknown): VerificationQueueR
   return entries.map((value) => {
     const item = record(value);
     if (!item) throw invalid();
-    const { verificationItemId, verificationCaseId, organizationName, businessLegalName, itemType, status, caseSubmittedAt, einCheckState, einCheckMode, einLastCheckedAt, einSafeReason } = item;
+    const { verificationItemId, verificationCaseId, organizationName, businessLegalName, itemType, status, caseSubmittedAt, itemUpdatedAt, einCheckState, einCheckMode, einLastCheckedAt, einSafeReason } = item;
     if (![verificationItemId, verificationCaseId, organizationName, businessLegalName, itemType, status].every((field) => typeof field === "string" && field.trim())) throw invalid();
     if (caseSubmittedAt !== null && (typeof caseSubmittedAt !== "string" || !Number.isFinite(Date.parse(caseSubmittedAt)))) throw invalid();
+    if (typeof itemUpdatedAt !== "string" || !Number.isFinite(Date.parse(itemUpdatedAt))) throw invalid();
     const states = ["not_checked", "checking", "match", "no_match", "incomplete", "manual_review", "unavailable"];
     if (!states.includes(String(einCheckState)) || (einCheckMode !== null && einCheckMode !== "mock" && einCheckMode !== "live")) throw invalid();
     if (einLastCheckedAt !== null && (typeof einLastCheckedAt !== "string" || !Number.isFinite(Date.parse(einLastCheckedAt)))) throw invalid();
@@ -34,6 +36,6 @@ export function normalizeVerificationQueue(payload: unknown): VerificationQueueR
     const id = verificationItemId as string;
     if (ids.has(id)) throw invalid();
     ids.add(id);
-    return { id, caseId: verificationCaseId as string, organization: organizationName as string, businessName: businessLegalName as string, itemType: itemType as string, status: status as string, submittedAt: caseSubmittedAt as string | null, checkState: einCheckState as VerificationQueueRow["checkState"], checkMode: einCheckMode as VerificationQueueRow["checkMode"], lastCheckedAt: einLastCheckedAt as string | null, safeReason: einSafeReason as string | null };
+    return { id, caseId: verificationCaseId as string, organization: organizationName as string, businessName: businessLegalName as string, itemType: itemType as string, status: status as string, submittedAt: caseSubmittedAt as string | null, updatedAt: itemUpdatedAt, checkState: einCheckState as VerificationQueueRow["checkState"], checkMode: einCheckMode as VerificationQueueRow["checkMode"], lastCheckedAt: einLastCheckedAt as string | null, safeReason: einSafeReason as string | null };
   });
 }

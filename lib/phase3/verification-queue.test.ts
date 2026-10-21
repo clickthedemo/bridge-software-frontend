@@ -19,10 +19,11 @@ test("backend entries retain distinct item IDs, shared case IDs, and submitted t
     { id: "item-2", caseId: "case-1", submittedAt: null },
   ]);
   assert.deepEqual(normalizeVerificationQueue({ entries: [] }), []);
+  assert.equal(rows[0]?.updatedAt, entry.itemUpdatedAt);
 });
 
 test("malformed queues cannot be mistaken for empty successful queues", () => {
-  for (const payload of [null, {}, { items: [] }, { entries: [null] }, { entries: [{}] }, { entries: [entry, entry] }, { entries: [{ ...entry, caseSubmittedAt: "bad" }] }]) {
+  for (const payload of [null, {}, { items: [] }, { entries: [null] }, { entries: [{}] }, { entries: [entry, entry] }, { entries: [{ ...entry, caseSubmittedAt: "bad" }] }, { entries: [{ ...entry, itemUpdatedAt: "bad" }] }]) {
     assert.throws(() => normalizeVerificationQueue(payload), /response was invalid/);
   }
 });

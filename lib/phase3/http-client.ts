@@ -68,7 +68,9 @@ export class HttpPhase3Client implements Phase3Client {
 
     if (!response.ok) {
       const code = mapStatus(response.status);
-      throw new Phase3Error(code, userMessageFor(code));
+      const payload = await response.json().catch(() => null) as { message?: unknown } | null;
+      const serverMessage = typeof payload?.message === "string" && payload.message.trim() ? payload.message : null;
+      throw new Phase3Error(code, serverMessage ?? userMessageFor(code));
     }
 
     if (response.status === 204) {
@@ -167,9 +169,9 @@ export class HttpPhase3Client implements Phase3Client {
     });
   }
 
-  reviewVerificationItem(verificationItemId: string, decision: "verified" | "rejected" | "correction_required", reason?: string) {
+  reviewVerificationItem(verificationItemId: string, decision: "verified" | "rejected" | "correction_required", expectedUpdatedAt: string, reason?: string) {
     return this.request<unknown>(`/api/v1/admin/verification-items/${encodeURIComponent(verificationItemId)}/review`, {
-      method: "POST", body: JSON.stringify({ decision, reason: reason || null }),
+      method: "POST", body: JSON.stringify({ decision, reason: reason || null, expectedUpdatedAt }),
     });
   }
 

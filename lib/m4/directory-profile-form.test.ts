@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { canManageDirectoryProfile, directoryProfileBusinessType, normalizeEin } from "./directory-profile-form.ts";
 import type { OrganizationMembership } from "@/lib/phase3";
@@ -44,4 +45,11 @@ test("EIN intake accepts the two IRS formats and nothing else", () => {
   assert.equal(normalizeEin(" 12-3456789 "), "123456789");
   assert.equal(normalizeEin("123456789"), "123456789");
   for (const bad of ["", "12-345678", "1234567890", "12 3456789", "ab-cdefghi", "123-456789"]) assert.throws(() => normalizeEin(bad), /9-digit EIN/);
+});
+
+test("the full EIN entry is masked and only last-four status copy is rendered", () => {
+  const editor = readFileSync(new URL("../../components/DirectoryEditor.tsx", import.meta.url), "utf8");
+  assert.match(editor, /EIN \(required\)<input required type="password"/);
+  assert.match(editor, /EIN ending \$\{einLastFour\}/);
+  assert.doesNotMatch(editor, /revealEin|ein\/reveal/);
 });

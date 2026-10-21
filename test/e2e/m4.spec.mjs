@@ -16,11 +16,11 @@ const profile = {
   ],
   logoUrl: null, status: "approved", hasPublishedVersion: true, legalName: "Example Brand LLC", dbaName: "Example Brand", verified: true,
 };
-function identity(role = "owner") {
-  return { user: { id: "11111111-1111-4111-8111-111111111111", email: "owner@example.test", accountType: "standard", platformRoles: [], profile: { displayName: "Example Owner", phone: null } },
+function identity(role = "owner", accountType = "standard") {
+  return { user: { id: "11111111-1111-4111-8111-111111111111", email: "owner@example.test", accountType, platformRoles: [], profile: { displayName: "Example Owner", phone: null } },
     memberships: [org1, org2].map((organizationId, index) => ({ organizationId, organizationName: index ? "Second organization" : "First organization", organizationType: "brand", role, status: "active" })) };
 }
-async function setup(page, handler, role = "owner") {
+async function setup(page, handler, role = "owner", accountType = "standard") {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (entry) => { if (entry.type() === "error") errors.push(`${entry.text()} ${entry.location().url}`); });
@@ -33,7 +33,7 @@ async function setup(page, handler, role = "owner") {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/auth/me") {
       await new Promise((resolve) => setTimeout(resolve, 250));
-      return route.fulfill({ json: identity(role) });
+      return route.fulfill({ json: identity(role, accountType) });
     }
     if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
     const result = await handler(route, url);
@@ -68,6 +68,8 @@ for (const role of ["owner", "page_manager"]) {
       if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: business, organizationId: org1, legalName: "Example Brand LLC", dbaName: "Example Brand", status: "active" }] } });
       if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
       if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
+      if (route.request().method() === "GET" && url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { businessId: business, email: null, phone: null, updatedAt: "2026-10-21T10:00:00Z" } } });
+      if (route.request().method() === "GET" && url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
       if (url.pathname.endsWith("/directory-profile")) {
         if (route.request().method() === "PUT") {
           const body = route.request().postDataJSON(); saves.push(body);
@@ -99,6 +101,8 @@ for (const role of ["owner", "page_manager"]) {
 
 test("owner can enter EIN, private contact and address that submission requires", async ({ page }, testInfo) => {
   const writes = [];
+  let savedContact = null;
+  let savedLocation = null;
   let missing = ["private_email", "private_phone", "ein_verification", "business_address"];
   const errors = await setup(page, async (route, url) => {
     const method = route.request().method();
@@ -106,9 +110,11 @@ test("owner can enter EIN, private contact and address that submission requires"
     if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: missing.length === 0, missingFields: missing } });
     if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
     if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, status: "draft", hasPublishedVersion: false } } });
+    if (method === "GET" && url.pathname.endsWith(`/businesses/${business}/contact`)) { const contact = url.pathname.includes(`/organizations/${org1}/`) ? savedContact : null; return route.fulfill({ json: { contact: { businessId: business, email: contact?.email ?? null, phone: contact?.phone ?? null, updatedAt: "2026-10-21T10:00:00Z" } } }); }
+    if (method === "GET" && url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: url.pathname.includes(`/organizations/${org1}/`) ? savedLocation : null } });
     if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/ein`)) { writes.push([url.pathname, route.request().postDataJSON()]); return route.fulfill({ json: { businessId: business, einLastFour: "6789" } }); }
-    if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/contact`)) { writes.push([url.pathname, route.request().postDataJSON()]); missing = missing.filter((item) => !item.startsWith("private_")); return route.fulfill({ json: { contact: { businessId: business, ...route.request().postDataJSON() } } }); }
-    if (method === "PUT" && url.pathname.endsWith(`/organizations/${org1}/primary-location`)) { writes.push([url.pathname, route.request().postDataJSON()]); missing = missing.filter((item) => item !== "business_address"); return route.fulfill({ json: { location: {} } }); }
+    if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/contact`)) { savedContact = route.request().postDataJSON(); writes.push([url.pathname, savedContact]); missing = missing.filter((item) => !item.startsWith("private_")); return route.fulfill({ json: { contact: { businessId: business, ...savedContact } } }); }
+    if (method === "PUT" && url.pathname.endsWith(`/organizations/${org1}/primary-location`)) { const value = route.request().postDataJSON(); savedLocation = { id: "66666666-6666-4666-8666-666666666666", organizationId: org1, updatedAt: "2026-10-21T10:00:00Z", ...value }; writes.push([url.pathname, value]); missing = missing.filter((item) => item !== "business_address"); return route.fulfill({ json: { location: savedLocation } }); }
     return false;
   });
   await openPage(page, "/my-profile");
@@ -131,6 +137,16 @@ test("owner can enter EIN, private contact and address that submission requires"
   await page.getByLabel("ZIP code (required)", { exact: true }).fill("15222");
   await page.getByRole("button", { name: "Save business address", exact: true }).click();
   await expect(page.getByText("Business address saved.", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByLabel("Business email (required; not published)", { exact: true })).toHaveValue("ops@example.test");
+  await expect(page.getByLabel("Business phone (required; not published)", { exact: true })).toHaveValue("555-010-2000");
+  await expect(page.getByLabel("Street address (required)", { exact: true })).toHaveValue("1 Example Way");
+  await page.getByLabel("Organization (required)", { exact: true }).selectOption(org2);
+  await expect(page.getByLabel("Business email (required; not published)", { exact: true })).toHaveValue("");
+  await page.getByLabel("Organization (required)", { exact: true }).selectOption(org1);
+  await expect(page.getByLabel("Business email (required; not published)", { exact: true })).toHaveValue("ops@example.test");
+  await expect(page.getByLabel("Street address (required)", { exact: true })).toHaveValue("1 Example Way");
 
   expect(writes).toEqual([
     [`/api/v1/organizations/${org1}/businesses/${business}/ein`, { ein: "123456789" }],
@@ -176,3 +192,82 @@ test("directory filters reset cursor and discard an old in-flight page", async (
   await expect(page.getByText("1 business loaded", { exact: true })).toBeVisible();
   await evidence(page, testInfo, "directory", errors);
 });
+
+
+for (const index of [25, 75]) {
+  test(`sent notification opens request at index ${index}`, async ({ page }) => {
+    const requests = Array.from({ length: 80 }, (_, row) => ({ id: `request-${row}`, subject: `Request ${row}`, status: "new", createdAt: "2026-10-21T10:00:00Z" }));
+    await setup(page, async (route, url) => {
+      if (url.pathname !== "/api/v1/contact-requests/sent") return false;
+      const limit = Number(url.searchParams.get("limit")), offset = Number(url.searchParams.get("offset"));
+      return route.fulfill({ json: { requests: requests.slice(offset, offset + limit), pageInfo: { limit, offset, hasMore: offset + limit < requests.length } } });
+    });
+    await openPage(page, `/requests/sent?requestId=request-${index}`);
+    await expect(page.getByRole("heading", { name: `Request ${index}`, exact: true })).toBeVisible();
+  });
+}
+
+test("profile detail recovers after a failed read and retry", async ({ page }) => {
+  let reads = 0;
+  await setup(page, async (route, url) => {
+    if (url.pathname !== "/api/v1/directory/profiles/example-brand") return false;
+    return ++reads === 1
+      ? route.fulfill({ status: 500, json: { error: "READ_FAILED", message: "Temporary failure" } })
+      : route.fulfill({ json: { profile } });
+  });
+  await openPage(page, "/profile/example-brand");
+  await expect(page.getByRole("heading", { name: "Profile unavailable", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Example Brand", exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("failed preferences cannot save defaults and retry restores server choices", async ({ page }) => {
+  let reads = 0, writes = 0;
+  const preferences = { profile: { inApp: false, email: false }, contact: { inApp: false, email: false }, verification: { inApp: false, email: false } };
+  await setup(page, async (route, url) => {
+    if (url.pathname !== "/api/v1/notification-preferences") return false;
+    if (route.request().method() === "PUT") { writes++; return route.fulfill({ json: { preferences } }); }
+    return ++reads === 1
+      ? route.fulfill({ status: 500, json: { error: "READ_FAILED", message: "Temporary failure" } })
+      : route.fulfill({ json: { preferences } });
+  });
+  await openPage(page, "/notifications/preferences");
+  await expect(page.getByRole("button", { name: "Retry preferences", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save preferences", exact: true })).toBeDisabled();
+  expect(writes).toBe(0);
+  await page.getByRole("button", { name: "Retry preferences", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save preferences", exact: true })).toBeEnabled();
+  for (const input of await page.locator('form input[type="checkbox"]').all()) await expect(input).not.toBeChecked();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("sales-rep page managers use assigned links without loading an organization inbox", async ({ page }) => {
+  let organizationReads = 0;
+  await setup(page, async (route, url) => {
+    if (url.pathname.includes("/organizations/") && url.pathname.endsWith("/contact-requests")) { organizationReads++; return route.fulfill({ status: 403, json: { error: "FORBIDDEN" } }); }
+    if (url.pathname === "/api/v1/contact-requests/assigned-request") return route.fulfill({ json: { request: { id: "assigned-request", subject: "Assigned request", status: "new", createdAt: "2026-10-21T10:00:00Z" } } });
+    return false;
+  }, "page_manager", "sales_rep");
+  await openPage(page, "/requests");
+  await expect(page.getByRole("heading", { name: "No accessible inbox", exact: true })).toBeVisible();
+  expect(organizationReads).toBe(0);
+  await openPage(page, "/requests?requestId=assigned-request");
+  await expect(page.getByRole("heading", { name: "Assigned request", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark viewed", exact: true })).toBeVisible();
+  expect(organizationReads).toBe(0);
+});
+
+for (const hasBusiness of [false, true]) {
+  test(`page manager waits for owner profile setup with business=${hasBusiness}`, async ({ page }) => {
+    await setup(page, async (route, url) => {
+      if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: hasBusiness ? [{ id: business, legalName: "Example Brand LLC", status: "active" }] : [] } });
+      if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
+      return false;
+    }, "page_manager");
+    await openPage(page, "/my-profile");
+    await expect(page.getByRole("heading", { name: "Profile setup required", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create business", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save draft", exact: true })).toHaveCount(0);
+  });
+}

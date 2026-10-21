@@ -181,7 +181,7 @@ export type Phase3Client = {
   listAdminUsers(page: number, pageSize: number): Promise<AdminUsersResponse>;
   getVerificationQueue(filters?: { status?: string; itemType?: string; limit?: number }): Promise<unknown>;
   runEinCheck(verificationItemId: string, mode: "mock" | "live", mockOutcome?: string): Promise<unknown>;
-  reviewVerificationItem(verificationItemId: string, decision: "verified" | "rejected" | "correction_required", reason?: string): Promise<unknown>;
+  reviewVerificationItem(verificationItemId: string, decision: "verified" | "rejected" | "correction_required", expectedUpdatedAt: string, reason?: string): Promise<unknown>;
   getSession(): Promise<SessionClaims>;
   createUploadIntent(file: File): Promise<UploadIntent>;
   createPost(input: CreatePostInput): Promise<PostRecord>;
