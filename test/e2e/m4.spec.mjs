@@ -37,6 +37,9 @@ async function setup(page, handler, role = "owner", accountType = "standard", pl
       return route.fulfill({ json: identity(role, accountType, platformRoles) });
     }
     if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
+    // Phase 5 profile widgets also read these; an empty, healthy answer keeps M4 profile journeys unchanged.
+    if (url.pathname === "/api/v1/saved-profiles") return route.fulfill({ json: { savedProfiles: [], pageInfo: { limit: 100, offset: 0, hasMore: false } } });
+    if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: [], nextCursor: null } });
     const result = await handler(route, url);
     if (result !== false) return;
     console.error(`Unexpected fixture route: ${url.href}`);
