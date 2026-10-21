@@ -27,6 +27,7 @@ async function setup(page, handler, role = "owner", accountType = "standard", pl
   await page.addInitScript(() => {
     localStorage.setItem("bridge-age-confirmed-v1", "confirmed");
     // Keep pagination deliberate so the test can exercise filter changes during an in-flight next page.
+    window.__bridgeNativeIntersectionObserver = window.IntersectionObserver;
     window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
   });
   await page.route("https://bridge-api.example.test/**", async (route) => {
@@ -397,8 +398,13 @@ test("business selection loads B protected fields before saving B", async ({ pag
   await page.getByRole("combobox", { name: "Business (required)", exact: true }).selectOption(businessB);
   await expect(website).toHaveValue("https://b.example.test");
   await expect(page.getByLabel("Number of employees (required)", { exact: true })).toHaveValue("42");
+  await page.getByLabel("Display name (required)", { exact: true }).fill("Unsaved B draft");
   await page.getByRole("button", { name: "Save business details", exact: true }).click();
   await expect(page.getByText("Protected business details saved.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Business (required)", exact: true })).toHaveValue(businessB);
+  await expect(page.getByLabel("Display name (required)", { exact: true })).toHaveValue("Unsaved B draft");
+  await expect(website).toHaveValue("https://b.example.test");
+  await expect(page.getByLabel("Number of employees (required)", { exact: true })).toHaveValue("42");
   expect(writes).toEqual([{ path: `/api/v1/organizations/${org1}/businesses/${businessB}`, websiteUrl: "https://b.example.test", employeeCount: 42 }]);
 });
 
@@ -523,3 +529,187 @@ test("a pending EIN action disables every row until the mutation completes", asy
   releaseLookup();
   await expect(second).toBeEnabled();
 });
+
+for (const failure of ["initial", "organization switch"]) {
+  test(`editor ${failure} failure hides all writes and recovers on retry`, async ({ page }) => {
+    let fail = true;
+    const writes = [];
+    await setup(page, async (route, url) => {
+      const organizationId = url.pathname.includes(org2) ? org2 : org1;
+      if (route.request().method() !== "GET") writes.push(url.pathname);
+      if (url.pathname.endsWith("/businesses")) {
+        if (fail && (failure === "initial" || organizationId === org2)) return route.fulfill({ status: 500, json: { error: "READ_FAILED", message: "Editor read failed" } });
+        return route.fulfill({ json: { businesses: [{ id: business, organizationId, legalName: "Example", websiteUrl: "https://example.test", employeeCount: 5 }] } });
+      }
+      if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, organizationId, displayName: organizationId === org1 ? "Org A profile" : "Org B profile", status: "draft" } } });
+      if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+      if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
+      if (url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { email: "owner@example.test", phone: "555-010-1000" } } });
+      if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
+      return false;
+    });
+    await openPage(page, "/my-profile");
+    if (failure === "organization switch") {
+      await expect(page.getByLabel("Display name (required)", { exact: true })).toHaveValue("Org A profile");
+      await page.getByRole("combobox", { name: "Organization (required)", exact: true }).selectOption(org2);
+    }
+    await expect(page.getByRole("alert")).toHaveText("Editor read failed");
+    await expect(page.locator("form")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create business", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Upload logo", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Choose logo", { exact: true })).toHaveCount(0);
+    expect(writes).toEqual([]);
+    fail = false;
+    await page.getByRole("button", { name: "Try again", exact: true }).click();
+    await expect(page.getByLabel("Display name (required)", { exact: true })).toHaveValue(failure === "initial" ? "Org A profile" : "Org B profile");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(writes).toEqual([]);
+  });
+}
+
+test("failed inbox organization switch removes old actions and retries the selected organization", async ({ page }) => {
+  let fail = true;
+  const writes = [];
+  await setup(page, async (route, url) => {
+    if (route.request().method() !== "GET") writes.push(url.pathname);
+    if (url.pathname.endsWith("/contact-requests")) {
+      const second = url.pathname.includes(org2);
+      if (second && fail) return route.fulfill({ status: 500, json: { error: "READ_FAILED", message: "Inbox read failed" } });
+      return route.fulfill({ json: { requests: [{ id: second ? "request-b" : "request-a", subject: second ? "Org B request" : "Org A request", status: "new", firstName: "Example", createdAt: "2026-10-21T10:00:00Z" }], pageInfo: { limit: 20, offset: 0, hasMore: false } } });
+    }
+    return false;
+  });
+  await openPage(page, "/requests");
+  await expect(page.getByRole("heading", { name: "Org A request", exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Organization", exact: true }).selectOption(org2);
+  await expect(page.getByRole("alert")).toHaveText("Inbox read failed");
+  await expect(page.getByRole("heading", { name: "Org A request", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Mark viewed", exact: true })).toHaveCount(0);
+  fail = false;
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Org B request", exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
+for (const kind of ["direct", "sent"]) {
+  test(`${kind} request reads recover from an initial failure`, async ({ page }) => {
+    let fail = true;
+    await setup(page, async (route, url) => {
+      const endpoint = kind === "direct" ? "/api/v1/contact-requests/assigned-request" : "/api/v1/contact-requests/sent";
+      if (url.pathname !== endpoint) return false;
+      if (fail) return route.fulfill({ status: 500, json: { error: "READ_FAILED", message: "Request read failed" } });
+      const request = { id: "assigned-request", subject: "Recovered request", status: "new", firstName: "Example", createdAt: "2026-10-21T10:00:00Z" };
+      return route.fulfill({ json: kind === "direct" ? { request } : { requests: [request], pageInfo: { limit: 20, offset: 0, hasMore: false } } });
+    });
+    await openPage(page, kind === "direct" ? "/requests?requestId=assigned-request" : "/requests/sent");
+    await expect(page.getByRole("alert")).toHaveText("Request read failed");
+    fail = false;
+    await page.getByRole("button", { name: "Try again", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Recovered request", exact: true })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+}
+
+test("licence queue drops failed-filter cards and serializes every review action", async ({ page }) => {
+  let fail = true, releaseReview, markStarted;
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  const gate = new Promise((resolve) => { releaseReview = resolve; });
+  const mutations = [];
+  const licenses = ["x", "y"].map((id) => ({ id, businessId: business, organizationId: org1, licenseNumber: `TEST-${id}`, licenseType: "adult_use", issuingState: id === "x" ? "PA" : "OR", expiresOn: "2027-12-31", status: "pending", verifiedAt: null, reviewReason: null }));
+  await setup(page, async (route, url) => {
+    if (url.pathname === "/api/v1/admin/verification-queue") return route.fulfill({ json: { entries: [] } });
+    if (url.pathname === "/api/v1/admin/business-licenses") {
+      const status = url.searchParams.get("status");
+      if (status === "verified" && fail) return route.fulfill({ status: 500, json: { error: "READ_FAILED", message: "Licence read failed" } });
+      return route.fulfill({ json: { licenses: status === "verified" ? [{ ...licenses[0], status: "verified" }] : licenses.filter((item) => !status || item.status === status) } });
+    }
+    if (url.pathname.endsWith("/review") && route.request().method() === "POST") {
+      mutations.push(url.pathname); markStarted(); await gate;
+      licenses[0].status = "verified";
+      return route.fulfill({ json: { license: licenses[0] } });
+    }
+    return false;
+  }, "owner", "standard", ["admin"]);
+  page.on("dialog", (dialog) => dialog.accept());
+  await openPage(page, "/admin/verification");
+  await expect(page.locator(".license-review-card")).toHaveCount(2);
+  const tabs = page.getByRole("navigation", { name: "Licence status", exact: true });
+  await tabs.getByRole("button", { name: "Verified", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Licence read failed");
+  await expect(page.locator(".license-review-card")).toHaveCount(0);
+  fail = false;
+  await page.getByRole("button", { name: "Retry licence queue", exact: true }).click();
+  await expect(page.locator(".license-review-card")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await tabs.getByRole("button", { name: "Pending", exact: true }).click();
+  await expect(page.locator(".license-review-card")).toHaveCount(2);
+  await page.locator("#license-x").getByRole("button", { name: "Approve", exact: true }).click();
+  await started;
+  const second = page.locator("#license-y").getByRole("button", { name: "Approve", exact: true });
+  await expect(second).toBeDisabled();
+  await expect(page.locator("#license-y").getByRole("button", { name: "Reject", exact: true })).toBeDisabled();
+  await expect(tabs.getByRole("button", { name: "Verified", exact: true })).toBeDisabled();
+  await second.evaluate((button) => button.click());
+  expect(mutations).toEqual(["/api/v1/admin/business-licenses/x/review"]);
+  releaseReview();
+  await expect(page.locator("#license-x")).toHaveCount(0);
+  await expect(second).toBeEnabled();
+});
+
+test("directory URL echo preserves a typed space and the following word", async ({ page }) => {
+  await setup(page, (route, url) => url.pathname === "/api/v1/directory/profiles" ? route.fulfill({ json: { profiles: [], pageInfo: { nextCursor: null, hasMore: false } } }) : false);
+  await openPage(page, "/directory");
+  const search = page.getByRole("searchbox", { name: "Search", exact: true });
+  await search.pressSequentially("Blue ");
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("Blue");
+  await expect(search).toHaveValue("Blue ");
+  await search.pressSequentially("Dream");
+  await expect(search).toHaveValue("Blue Dream");
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("Blue Dream");
+});
+
+test("visible directory sentinel stops after a failed page until manual retry", async ({ page }) => {
+  let cursorReads = 0, allowNext = false;
+  await setup(page, (route, url) => {
+    if (url.pathname !== "/api/v1/directory/profiles") return false;
+    if (url.searchParams.has("cursor")) {
+      cursorReads++;
+      return allowNext ? route.fulfill({ json: { profiles: [{ ...profile, slug: "second-brand", displayName: "Second Brand" }], pageInfo: { nextCursor: null, hasMore: false } } }) : route.fulfill({ status: 500, json: { error: "READ_FAILED", message: "Next page failed" } });
+    }
+    return route.fulfill({ json: { profiles: [profile], pageInfo: { nextCursor: "next", hasMore: true } } });
+  });
+  await openPage(page, "/directory");
+  await expect(page.getByRole("button", { name: "Load more", exact: true })).toBeVisible();
+  await page.evaluate(() => { window.IntersectionObserver = window.__bridgeNativeIntersectionObserver; });
+  await page.getByRole("textbox", { name: "City", exact: true }).fill("Portland");
+  await page.getByRole("button", { name: /^(Load more|Retry loading more)$/ }).scrollIntoViewIfNeeded();
+  const retry = page.getByRole("button", { name: "Retry loading more", exact: true });
+  await expect(retry).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(cursorReads).toBe(1);
+  allowNext = true;
+  await retry.click();
+  await expect(page.getByRole("heading", { name: "Second Brand", exact: true })).toBeVisible();
+  expect(cursorReads).toBe(2);
+});
+
+for (const key of ["Enter", "Space"]) {
+  test(`notification Mark read with ${key} never follows the card action`, async ({ page }) => {
+    let writes = 0, readAt = null;
+    await setup(page, () => false);
+    await page.route((url) => url.origin === "https://bridge-api.example.test" && url.pathname.startsWith("/api/v1/notifications"), (route) => {
+      const notification = { id: "notice-1", type: "contact_request", category: "contact", title: "New contact request", body: "A new request arrived.", createdAt: "2026-10-21T10:00:00Z", readAt, available: true, context: null, resourceType: "contact_request", resourceId: "request-1", action: { label: "View request", href: "/requests?requestId=request-1" } };
+      if (route.request().method() === "POST") { writes++; readAt = "2026-10-21T11:00:00Z"; return route.fulfill({ json: {} }); }
+      return route.fulfill({ json: { notifications: [notification], pageInfo: { limit: 20, offset: 0, hasMore: false } } });
+    });
+    await openPage(page, "/notifications");
+    await expect(page.locator(".notification-card")).not.toHaveAttribute("role", "link");
+    const markRead = page.getByRole("button", { name: "Mark read", exact: true });
+    await markRead.focus();
+    await markRead.press(key);
+    await expect.poll(() => writes).toBe(1);
+    await expect(markRead).toBeDisabled();
+    expect(new URL(page.url()).pathname).toBe("/notifications");
+  });
+}

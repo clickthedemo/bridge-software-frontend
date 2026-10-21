@@ -40,14 +40,62 @@ function RequestCards({ page, organizationId, direct = false, onChanged }: { pag
 
 export function ContactRequestInbox() {
   const targetId = useSearchParams().get("requestId");
-  const { memberships } = useAuth(); const organizations = useMemo(() => memberships.filter((item) => item.status === "active" && ["owner", "admin"].includes(item.role)), [memberships]);
-  const [organizationId, setOrganizationId] = useState(organizations[0]?.organizationId ?? ""); const [filter, setFilter] = useState<ContactRequestStatus | "">(""); const [offset, setOffset] = useState(0); const [page, setPage] = useState<OffsetPage<ContactRequest> | null>(null); const [error, setError] = useState(""), [targetError, setTargetError] = useState(""); const [revision, setRevision] = useState(0); const selectedOrganizationId = organizationId || organizations[0]?.organizationId || "";
-  useEffect(() => { if (!targetId) return; let active = true; m4Api.inboundContactRequest(targetId).then((item) => { if (active) { setTargetError(""); setPage({ items: [item], limit: 1, offset: 0, hasMore: false, total: 1, pageInfo: { limit: 1, offset: 0, hasMore: false } }); } }).catch(() => { if (active) { setPage(null); setTargetError("The referenced contact request is unavailable or you no longer have access."); } }); return () => { active = false; }; }, [targetId, revision]);
-  useEffect(() => { if (targetId || !selectedOrganizationId) return; let active = true; m4Api.inbox(selectedOrganizationId, { status: filter || undefined, limit: 20, offset }).then((value) => { if (active) setPage(value); }).catch((cause) => { if (active) setError(errorText(cause)); }); return () => { active = false; }; }, [targetId, selectedOrganizationId, filter, offset, revision]);
-  if (targetId) return <div className="form-stack">{targetError && <p className="form-error" role="alert">{targetError}</p>}{!page && !targetError && <p role="status">Loading contact request…</p>}{page && <RequestCards direct page={page} onChanged={() => setRevision((value) => value + 1)} />}</div>;
-  if (!organizations.length) return <div className="empty-state"><h2>No accessible inbox</h2><p>Organization owners and admins can view their inbox. Assigned sales representatives can open only requests routed to them.</p></div>;
-  return <div className="form-stack"><div className="feed-toolbar"><label htmlFor="inbox-organization">Organization</label><select id="inbox-organization" value={organizationId} onChange={(event) => { setOrganizationId(event.target.value); setOffset(0); }}>{organizations.map((item) => <option key={item.organizationId} value={item.organizationId}>{item.organizationName}</option>)}</select><label htmlFor="inbox-status">Status</label><select id="inbox-status" value={filter} onChange={(event) => { setFilter(event.target.value as ContactRequestStatus | ""); setOffset(0); }}><option value="">All statuses</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select><Link className="button secondary" href="/requests/sent">Sent requests</Link></div>{targetError && <p className="form-error" role="alert">{targetError}</p>}{error && <p className="form-error" role="alert">{error}</p>}{!page && !error && <p role="status">Loading contact requests…</p>}{page && <><RequestCards organizationId={selectedOrganizationId} page={page} onChanged={() => setRevision((value) => value + 1)} /><Pager page={page} setOffset={setOffset} /></>}</div>;
+  const { memberships } = useAuth();
+  const organizations = useMemo(() => memberships.filter((item) => item.status === "active" && ["owner", "admin"].includes(item.role)), [memberships]);
+  const [organizationId, setOrganizationId] = useState("");
+  const [filter, setFilter] = useState<ContactRequestStatus | "">("");
+  const [offset, setOffset] = useState(0), [revision, setRevision] = useState(0);
+  const selectedOrganizationId = organizationId || organizations[0]?.organizationId || "";
+  const retry = () => setRevision((value) => value + 1);
+  if (!targetId && !organizations.length) return <div className="empty-state"><h2>No accessible inbox</h2><p>Organization owners and admins can view their inbox. Assigned sales representatives can open only requests routed to them.</p></div>;
+  return <div className="form-stack">{!targetId && <div className="feed-toolbar"><label htmlFor="inbox-organization">Organization</label><select id="inbox-organization" value={selectedOrganizationId} onChange={(event) => { setOrganizationId(event.target.value); setOffset(0); }}>{organizations.map((item) => <option key={item.organizationId} value={item.organizationId}>{item.organizationName}</option>)}</select><label htmlFor="inbox-status">Status</label><select id="inbox-status" value={filter} onChange={(event) => { setFilter(event.target.value as ContactRequestStatus | ""); setOffset(0); }}><option value="">All statuses</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select><Link className="button secondary" href="/requests/sent">Sent requests</Link></div>}
+    <InboxRequests key={JSON.stringify([targetId, selectedOrganizationId, filter, offset, revision])} targetId={targetId} organizationId={selectedOrganizationId} filter={filter} offset={offset} onRetry={retry} onOffset={setOffset}/>
+  </div>;
 }
 
-export function SentContactRequests() { const targetId = useSearchParams().get("requestId"); const [offset, setOffset] = useState(0); const [page, setPage] = useState<OffsetPage<ContactRequest> | null>(null); const [error, setError] = useState(""), [targetError, setTargetError] = useState(""); useEffect(() => { if (!targetId) return; let active = true; void (async () => { let candidateOffset = 0; do { const candidate = await m4Api.sent({ limit: 20, offset: candidateOffset }); if (candidate.items.some((item) => item.id === targetId)) { if (active) setOffset(candidateOffset); return; } if (!candidate.hasMore) break; candidateOffset += candidate.limit; } while (true); if (active) setTargetError("The referenced contact request is unavailable or you no longer have access."); })().catch(() => { if (active) setTargetError("The referenced contact request could not be loaded."); }); return () => { active = false; }; }, [targetId]); useEffect(() => { let active = true; m4Api.sent({ limit: 20, offset }).then((value) => { if (active) setPage(value); }).catch((cause) => { if (active) setError(errorText(cause)); }); return () => { active = false; }; }, [offset]); return <>{targetError && <p className="form-error" role="alert">{targetError}</p>}{error && <p className="form-error" role="alert">{error}</p>}{!page && !error && <p role="status">Loading sent requests…</p>}{page && <><RequestCards page={page} onChanged={() => undefined} /><Pager page={page} setOffset={setOffset} /></>}</>; }
+function InboxRequests({ targetId, organizationId, filter, offset, onRetry, onOffset }: { targetId: string | null; organizationId: string; filter: ContactRequestStatus | ""; offset: number; onRetry(): void; onOffset(value: number): void }) {
+  const [page, setPage] = useState<OffsetPage<ContactRequest> | null>(null), [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const request = targetId
+      ? m4Api.inboundContactRequest(targetId).then((item): OffsetPage<ContactRequest> => ({ items: [item], limit: 1, offset: 0, hasMore: false, total: 1, pageInfo: { limit: 1, offset: 0, hasMore: false } }))
+      : m4Api.inbox(organizationId, { status: filter || undefined, limit: 20, offset });
+    request.then((value) => { if (active) setPage(value); }).catch((cause) => { if (active) { setPage(null); setError(errorText(cause)); } });
+    return () => { active = false; };
+  }, [targetId, organizationId, filter, offset]);
+  return <>{error && <div><p className="form-error" role="alert">{error}</p><button className="button secondary" type="button" onClick={onRetry}>Try again</button></div>}{!page && !error && <p role="status">{targetId ? "Loading contact request…" : "Loading contact requests…"}</p>}{page && <><RequestCards direct={!!targetId} {...(targetId ? {} : { organizationId })} page={page} onChanged={onRetry}/>{!targetId && <Pager page={page} setOffset={onOffset}/>}</>}</>;
+}
+
+export function SentContactRequests() {
+  const targetId = useSearchParams().get("requestId");
+  return <SentRequestList key={targetId ?? "sent"} targetId={targetId}/>;
+}
+
+function SentRequestList({ targetId }: { targetId: string | null }) {
+  const [offset, setOffset] = useState(0), [revision, setRevision] = useState(0);
+  const [page, setPage] = useState<OffsetPage<ContactRequest> | null>(null), [error, setError] = useState("");
+  const located = useRef(!targetId);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      if (targetId && !located.current) {
+        let candidateOffset = 0;
+        while (active) {
+          const candidate = await m4Api.sent({ limit: 20, offset: candidateOffset });
+          if (!active) return;
+          if (candidate.items.some((item) => item.id === targetId)) { located.current = true; setPage(candidate); return; }
+          if (!candidate.hasMore) throw new Error("The referenced contact request is unavailable or you no longer have access.");
+          candidateOffset += candidate.limit;
+        }
+      } else {
+        const value = await m4Api.sent({ limit: 20, offset });
+        if (active) setPage(value);
+      }
+    })().catch((cause) => { if (active) { setPage(null); setError(errorText(cause)); } });
+    return () => { active = false; };
+  }, [targetId, offset, revision]);
+  function reload(nextOffset = offset) { setPage(null); setError(""); setOffset(nextOffset); setRevision((value) => value + 1); }
+  return <>{error && <div><p className="form-error" role="alert">{error}</p><button className="button secondary" type="button" onClick={() => reload()}>Try again</button></div>}{!page && !error && <p role="status">Loading sent requests…</p>}{page && <><RequestCards page={page} onChanged={() => undefined}/><Pager page={page} setOffset={reload}/></>}</>;
+}
+
 function Pager({ page, setOffset }: { page: OffsetPage<unknown>; setOffset(value: number): void }) { return <nav aria-label="Request pages" className="button-row"><button className="button secondary" disabled={page.offset === 0} onClick={() => setOffset(Math.max(0, page.offset - page.limit))} type="button">Previous</button><button className="button secondary" disabled={!page.hasMore} onClick={() => setOffset(page.offset + page.limit)} type="button">Next</button></nav>; }

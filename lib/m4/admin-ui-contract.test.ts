@@ -20,7 +20,7 @@ test("Directory loading state is limited to active loading and preserves query s
   assert.match(directory, /value\.key !== key \? value/);
   assert.match(directory, /serializeDirectoryQuery\(filters\)/);
   assert.match(directory, /const search = searchParams\.toString\(\)/);
-  assert.match(directory, /if \(query !== search\) router\.replace/);
+  assert.match(directory, /if \(query !== search\) \{ pendingSearches\.current\.add\(query\); router\.replace/);
 });
 
 test("profile logo uses hidden-until-loaded image and initials fallback", () => {
@@ -34,7 +34,7 @@ test("review reason editors render only after an action is selected", () => {
   const directory = source("../../components/AdminDirectoryReview.tsx");
   const licences = source("../../app/admin/verification/verification-client.tsx");
   assert.match(directory, /pending && pending\.action !== "approve"/);
-  assert.match(licences, /pending\s*&&\s*pending\.action\s*!==\s*"verified"/);
+  assert.match(licences, /pending && !loading && licenses\.some[\s\S]*pending\.action !== "verified"/);
   assert.match(directory, /Reason \(required\)/);
   assert.match(licences, /Reason \(required\)/);
 });
@@ -45,7 +45,11 @@ test("notification cards expose contextual actions and read behavior", () => {
   assert.match(notifications, /item\.action\.label/);
   assert.match(notifications, /if \(!item\.readAt\) await m4Api\.markNotificationRead/);
   assert.match(notifications, /disabled=\{!!item\.readAt \|\| !!busy\}/);
-  assert.match(notifications, /role=\{item\.action \? "link"/);
+  const article = notifications.match(/<article\b[^>]*key=\{item\.id\}[^>]*>/)?.[0];
+  assert.ok(article, "notification remains a semantic article");
+  assert.doesNotMatch(article, /\b(?:role|tabIndex|onClick|onKeyDown)=/);
+  assert.match(notifications, /<button[^>]*onClick=\{\(\) => void open\(item\)\}[^>]*type="button">\{busy === item\.id \? "Opening…" : item\.action\.label\}/);
+  assert.match(notifications, /<button[^>]*onClick=\{\(\) => void read\(item\.id\)\}[^>]*type="button">/);
 });
 
 test("contact inbox displays sender first name and contact preference", () => {

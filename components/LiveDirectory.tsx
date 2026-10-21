@@ -30,11 +30,25 @@ export function LiveDirectory() {
   const current = state.key === requestKey;
   const result = current ? state.page : emptyPage; const loading = !current; const error = current ? state.error : "";
   const sentinel = useRef<HTMLDivElement>(null);
+  const pendingSearches = useRef(new Set<string>());
+  const pageRequestPending = useRef(false);
 
   // Browser back/forward navigation is an external URL-state change that must replace local controls.
-  useEffect(() => { setFilters(initial); }, [initial]);
   useEffect(() => {
-    const timer = window.setTimeout(() => { const query = serializeDirectoryQuery(filters); if (query !== search) router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false }); }, 200);
+    const externalNavigation = () => pendingSearches.current.clear();
+    window.addEventListener("popstate", externalNavigation);
+    return () => window.removeEventListener("popstate", externalNavigation);
+  }, []);
+  useEffect(() => {
+    if (pendingSearches.current.has(search)) {
+      // Retire earlier writes too: a newer navigation may supersede them before they echo.
+      for (const query of pendingSearches.current) { pendingSearches.current.delete(query); if (query === search) break; }
+      return;
+    }
+    setFilters(initial);
+  }, [initial, search]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { const query = serializeDirectoryQuery(filters); if (query !== search) { pendingSearches.current.add(query); router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false }); } }, 200);
     return () => window.clearTimeout(timer);
   }, [filters, pathname, router, search]);
   useEffect(() => {
@@ -46,11 +60,13 @@ export function LiveDirectory() {
 
   async function loadMore() {
     const key = requestKey; const cursor = result.nextCursor;
-    if (!cursor || loadingMore) return; setLoadingMore(true);
+    if (!cursor || loading || pageRequestPending.current) return;
+    pageRequestPending.current = true; setLoadingMore(true);
+    setState((value) => value.key !== key ? value : { ...value, error: "" });
     try { const page = await m4Api.listDirectory({ ...filters, organizationType: filters.organizationType || undefined, limit: 20, cursor }); setState((value) => value.key !== key ? value : { key, error: "", page: { profiles: [...value.page.profiles, ...page.profiles.filter((next) => !value.page.profiles.some((item) => item.slug === next.slug))], pageInfo: page.pageInfo, nextCursor: page.nextCursor, hasMore: page.hasMore } }); }
-    catch (cause) { setState((value) => value.key !== key ? value : { ...value, error: errorText(cause) }); } finally { setLoadingMore(false); }
+    catch (cause) { setState((value) => value.key !== key ? value : { ...value, error: errorText(cause) }); } finally { pageRequestPending.current = false; setLoadingMore(false); }
   }
-  useEffect(() => { const node = sentinel.current; if (!node || !result.hasMore) return; const observer = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) void loadMore(); }, { rootMargin: "300px" }); observer.observe(node); return () => observer.disconnect(); });
+  useEffect(() => { const node = sentinel.current; if (!node || !result.hasMore || loading || error || loadingMore) return; const observer = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) void loadMore(); }, { rootMargin: "300px" }); observer.observe(node); return () => observer.disconnect(); });
 
   const update = <K extends keyof DirectoryQueryState>(key: K, value: DirectoryQueryState[K]) => setFilters((current) => ({ ...current, [key]: value }));
   const returnQuery = serializeDirectoryQuery(filters);
@@ -63,7 +79,7 @@ export function LiveDirectory() {
     <label htmlFor="directory-region">Region</label><input id="directory-region" maxLength={100} value={filters.region} onChange={(event) => update("region", event.target.value)} />
     <label htmlFor="directory-sort">Sort</label><select id="directory-sort" value={filters.sort} onChange={(event) => update("sort", event.target.value as DirectorySort)}><option value="name_asc">Name A–Z</option><option value="name_desc">Name Z–A</option></select>
     <button className="text-button" disabled={!hasDirectoryFilters(filters)} onClick={() => setFilters(emptyDirectoryQuery)} type="button">Clear filters</button><Link className="button secondary" href="/my-profile">Manage your profile</Link>
-  </aside><section aria-busy={loading}>{loading && <p role="status">Loading directory…</p>}{error && <div className="empty-state"><p className="form-error" role="alert">The Directory could not be loaded. {error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div>}{!loading && !error && !result.profiles.length && (hasDirectoryFilters(filters) ? <div className="empty-state"><h2>No matching businesses</h2><p>Try changing or clearing the current filters.</p><button className="button secondary" onClick={() => setFilters(emptyDirectoryQuery)} type="button">Clear filters</button></div> : <div className="empty-state"><h2>No businesses published yet</h2><p>Approved business profiles appear here once they are published.</p></div>)}<p className="result-count" aria-live="polite">{result.profiles.length} business{result.profiles.length === 1 ? "" : "es"} loaded</p><div className="card-grid two">{result.profiles.map((profile) => <article className="profile-card" key={profile.slug}><Identity profile={profile} /><Link className="button secondary" href={`/profile/${encodeURIComponent(profile.slug)}${returnQuery ? `?from=${encodeURIComponent(returnQuery)}` : ""}`}>View profile</Link></article>)}</div><div ref={sentinel}>{result.hasMore && <button className="button secondary" disabled={loadingMore} onClick={() => void loadMore()} type="button">{loadingMore ? "Loading more…" : "Load more"}</button>}</div></section></div>;
+  </aside><section aria-busy={loading}>{loading && <p role="status">Loading directory…</p>}{error && <div className="empty-state"><p className="form-error" role="alert">The Directory could not be loaded. {error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div>}{!loading && !error && !result.profiles.length && (hasDirectoryFilters(filters) ? <div className="empty-state"><h2>No matching businesses</h2><p>Try changing or clearing the current filters.</p><button className="button secondary" onClick={() => setFilters(emptyDirectoryQuery)} type="button">Clear filters</button></div> : <div className="empty-state"><h2>No businesses published yet</h2><p>Approved business profiles appear here once they are published.</p></div>)}<p className="result-count" aria-live="polite">{result.profiles.length} business{result.profiles.length === 1 ? "" : "es"} loaded</p><div className="card-grid two">{result.profiles.map((profile) => <article className="profile-card" key={profile.slug}><Identity profile={profile} /><Link className="button secondary" href={`/profile/${encodeURIComponent(profile.slug)}${returnQuery ? `?from=${encodeURIComponent(returnQuery)}` : ""}`}>View profile</Link></article>)}</div><div ref={sentinel}>{result.hasMore && <button className="button secondary" disabled={loadingMore} onClick={() => void loadMore()} type="button">{loadingMore ? "Loading more…" : error ? "Retry loading more" : "Load more"}</button>}</div></section></div>;
 }
 
 export function LiveDirectoryDetail({ identifier }: { identifier: string }) {
