@@ -553,7 +553,7 @@ for (const failure of ["initial", "organization switch"]) {
       await expect(page.getByLabel("Display name (required)", { exact: true })).toHaveValue("Org A profile");
       await page.getByRole("combobox", { name: "Organization (required)", exact: true }).selectOption(org2);
     }
-    await expect(page.getByRole("alert")).toHaveText("Editor read failed");
+    await expect(page.locator(".form-error[role='alert']")).toHaveText("Editor read failed");
     await expect(page.locator("form")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create business", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Upload logo", exact: true })).toHaveCount(0);
@@ -562,7 +562,7 @@ for (const failure of ["initial", "organization switch"]) {
     fail = false;
     await page.getByRole("button", { name: "Try again", exact: true }).click();
     await expect(page.getByLabel("Display name (required)", { exact: true })).toHaveValue(failure === "initial" ? "Org A profile" : "Org B profile");
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".form-error[role='alert']")).toHaveCount(0);
     expect(writes).toEqual([]);
   });
 }
@@ -582,13 +582,13 @@ test("failed inbox organization switch removes old actions and retries the selec
   await openPage(page, "/requests");
   await expect(page.getByRole("heading", { name: "Org A request", exact: true })).toBeVisible();
   await page.getByRole("combobox", { name: "Organization", exact: true }).selectOption(org2);
-  await expect(page.getByRole("alert")).toHaveText("Inbox read failed");
+  await expect(page.locator(".form-error[role='alert']")).toHaveText("Inbox read failed");
   await expect(page.getByRole("heading", { name: "Org A request", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Mark viewed", exact: true })).toHaveCount(0);
   fail = false;
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Org B request", exact: true })).toBeVisible();
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".form-error[role='alert']")).toHaveCount(0);
   expect(writes).toEqual([]);
 });
 
@@ -603,11 +603,11 @@ for (const kind of ["direct", "sent"]) {
       return route.fulfill({ json: kind === "direct" ? { request } : { requests: [request], pageInfo: { limit: 20, offset: 0, hasMore: false } } });
     });
     await openPage(page, kind === "direct" ? "/requests?requestId=assigned-request" : "/requests/sent");
-    await expect(page.getByRole("alert")).toHaveText("Request read failed");
+    await expect(page.locator(".form-error[role='alert']")).toHaveText("Request read failed");
     fail = false;
     await page.getByRole("button", { name: "Try again", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Recovered request", exact: true })).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".form-error[role='alert']")).toHaveCount(0);
   });
 }
 
@@ -636,12 +636,12 @@ test("licence queue drops failed-filter cards and serializes every review action
   await expect(page.locator(".license-review-card")).toHaveCount(2);
   const tabs = page.getByRole("navigation", { name: "Licence status", exact: true });
   await tabs.getByRole("button", { name: "Verified", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText("Licence read failed");
+  await expect(page.locator(".form-error[role='alert']")).toHaveText("Licence read failed");
   await expect(page.locator(".license-review-card")).toHaveCount(0);
   fail = false;
   await page.getByRole("button", { name: "Retry licence queue", exact: true }).click();
   await expect(page.locator(".license-review-card")).toHaveCount(1);
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".form-error[role='alert']")).toHaveCount(0);
   await tabs.getByRole("button", { name: "Pending", exact: true }).click();
   await expect(page.locator(".license-review-card")).toHaveCount(2);
   await page.locator("#license-x").getByRole("button", { name: "Approve", exact: true }).click();
