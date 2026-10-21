@@ -117,3 +117,7 @@ Out of scope unless a documented scope change is approved: full social feed, dir
 6. Summarize changed behavior, evidence, remaining risks, and decisions needed.
 
 See `docs/claude-workflow.md` for the full human/AI operating model.
+
+## Browser error assertions, October 21, 2026
+
+Scope Playwright error assertions to the intended form or `.form-error[role="alert"]`. Next.js also renders `#__next-route-announcer__` with `role="alert"`, so an unscoped `getByRole("alert")` matches both.
