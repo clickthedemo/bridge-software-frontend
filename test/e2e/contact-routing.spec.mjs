@@ -1,215 +1,269 @@
 import { expect, test } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
 
+const origin = "https://bridge-api.example.test";
 const org1 = "22222222-2222-4222-8222-222222222222";
 const org2 = "33333333-3333-4333-8333-333333333333";
-const business = "44444444-4444-4444-8444-444444444444";
-const profile = {
-  id: "55555555-5555-4555-8555-555555555555", organizationId: org1, businessId: business,
-  slug: "example-brand", displayName: "Example Brand", summary: "Wholesale partners", story: "Our story",
-  businessType: "brand", categories: ["Wholesale"], city: "Portland", state: "Oregon", region: "Willamette Valley",
-  publicContact: { email: "hello@example.test", phone: "555-010-1000" }, license: { type: "METRC", number: "TEST-100" },
-  links: [
-    { type: "website", label: "Website", url: "https://example.test", sortOrder: 0 },
-    { type: "website", label: "Wholesale", url: "https://wholesale.example.test", sortOrder: 1 },
-    { type: "menu", label: "Menu", url: "https://example.test/menu", sortOrder: 2 },
-  ],
-  logoUrl: null, status: "approved", hasPublishedVersion: true, legalName: "Example Brand LLC", dbaName: "Example Brand", verified: true,
-};
-function identity(role = "owner") {
-  return { user: { id: "11111111-1111-4111-8111-111111111111", email: "owner@example.test", accountType: "standard", platformRoles: [], profile: { displayName: "Example Owner", phone: null } },
-    memberships: [org1, org2].map((organizationId, index) => ({ organizationId, organizationName: index ? "Second organization" : "First organization", organizationType: "brand", role, status: "active" })) };
+const requestId = "66666666-6666-4666-8666-666666666666";
+const rep1 = { membershipId: "77777777-7777-4777-8777-777777777777", userId: "88888888-8888-4888-8888-888888888888", displayName: "First organization rep" };
+const rep2 = { membershipId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", displayName: "Another first organization rep" };
+const otherRep = { membershipId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", userId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", displayName: "Second organization rep" };
+const admin = { userId: "99999999-9999-4999-8999-999999999999", displayName: "Configured Bridge admin" };
+const routingPath = (organizationId) => `/api/v1/organizations/${organizationId}/directory-profile/contact-routing`;
+const inboxPath = (organizationId) => `/api/v1/organizations/${organizationId}/contact-requests`;
+const incoming = { id: requestId, status: "new", subject: "Synthetic assigned inquiry", firstName: "Synthetic sender", workEmail: "sender@example.test", phoneNumber: "555-010-1000", yearsOfService: 2, contactPreference: "email", message: "Synthetic inquiry", createdAt: "2026-10-21T00:00:00Z" };
+const inbox = { requests: [incoming], pageInfo: { limit: 20, offset: 0, hasMore: false } };
+const salesSelector = (page) => page.getByLabel("Assigned sales representative", { exact: true });
+const saveButton = (page) => page.getByRole("button", { name: "Save routing changes", exact: true });
+const routingToggle = (page) => page.getByRole("button", { name: "Manage contact routing", exact: true });
+const appError = (page) => page.locator("main .form-error[role='alert']");
+function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
+function identity(role = "owner", accountType = "standard") {
+  return { user: { id: "11111111-1111-4111-8111-111111111111", email: "synthetic@example.test", accountType, platformRoles: [], profile: { displayName: "Synthetic member", phone: null } }, memberships: [org1, org2].map((organizationId, index) => ({ organizationId, organizationName: index ? "Second organization" : "First organization", organizationType: "brand", role, status: "active" })) };
 }
-async function setup(page, handler, role = "owner", suppliedIdentity = null) {
-  const errors = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (entry) => { if (entry.type() === "error") errors.push(`${entry.text()} ${entry.location().url}`); });
+
+// Mirrors m4.spec.mjs auth, age-gate and error fixtures without a timed auth delay.
+// Browser routes are synthetic contracts; SQL eligibility itself is covered by pgTAP.
+async function setup(page, handler, who = identity()) {
+  const state = { calls: [], errors: [], allowedFailures: [] };
+  page.on("pageerror", (error) => state.errors.push({ message: error.message, url: "pageerror" }));
+  page.on("console", (entry) => { if (entry.type() === "error") state.errors.push({ message: entry.text(), url: entry.location().url }); });
   await page.addInitScript(() => {
     localStorage.setItem("bridge-age-confirmed-v1", "confirmed");
-    // Keep pagination deliberate so the test can exercise filter changes during an in-flight next page.
     window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
   });
-  await page.route("https://bridge-api.example.test/**", async (route) => {
+  await page.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/v1/auth/me") {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      return route.fulfill({ json: suppliedIdentity ?? identity(role) });
-    }
+    const method = route.request().method();
+    state.calls.push({ path: url.pathname, method, ...(method === "PUT" || method === "POST" ? { body: route.request().postDataJSON() } : {}) });
+    if (url.pathname === "/api/v1/auth/me") return route.fulfill({ json: who });
     if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
-    const result = await handler(route, url);
-    if (result !== false) return;
-    console.error(`Unexpected fixture route: ${url.href}`);
+    const handled = await handler(route, url, state);
+    if (handled !== false) return;
+    state.errors.push({ message: `Unexpected fixture route: ${method} ${url.pathname}`, url: url.href });
     return route.fulfill({ status: 404, json: { error: "NOT_FOUND", message: "Unexpected fixture route" } });
   });
-  return errors;
+  return state;
 }
-async function openPage(page, path) {
+async function openPage(page, path = "/requests") {
   await page.goto(path);
-  // Auth can resolve beneath the age gate before its requestAnimationFrame unlocks
-  // the page. Wait for actual user interactivity before editing controlled inputs.
   await expect(page.locator(".age-gated-content")).not.toHaveAttribute("inert", "", { timeout: 15000 });
   await expect(page.locator(".age-gated-content")).toHaveAttribute("aria-hidden", "false");
+  await expect(page.getByRole("heading", { name: "Contact request inbox", exact: true })).toBeVisible();
 }
-async function evidence(page, testInfo, name, errors) {
-  await expect(page.locator("body")).not.toBeEmpty();
+async function evidence(page, state) {
   await expect(page.locator("nextjs-portal")).toHaveCount(0);
-  expect(errors).toEqual([]);
+  expect(state.errors.filter((entry) => !state.allowedFailures.some(({ status, path }) => entry.url === origin + path && entry.message.includes(String(status)) && entry.message.includes("Failed to load resource")))).toEqual([]);
+  expect(state.calls.filter((call) => call.path.includes("inbox-organizations"))).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await mkdir("/tmp/bridge-m4-evidence", { recursive: true });
-  const path = `/tmp/bridge-m4-evidence/${testInfo.project.name}-${name}.png`;
-  await page.screenshot({ path, fullPage: true });
-  await testInfo.attach(name, { path, contentType: "image/png" });
+}
+async function failRead(route, state, status, message) {
+  const path = new URL(route.request().url()).pathname;
+  state.allowedFailures.push({ status, path });
+  return route.fulfill({ status, json: { error: "ROUTING_UNAVAILABLE", message } });
+}
+function routingFixture(route, url, current, writes) {
+  const organizationId = url.pathname.includes(`/organizations/${org2}/`) ? org2 : org1;
+  if (url.pathname === inboxPath(organizationId)) return route.fulfill({ json: inbox });
+  if (url.pathname === `${routingPath(organizationId)}/candidates`) return route.fulfill({ json: { candidates: { salesRepresentatives: organizationId === org1 ? [rep1, rep2] : [otherRep], bridgeAdmin: current[organizationId].bridgeAdmin } } });
+  if (url.pathname !== routingPath(organizationId)) return false;
+  if (route.request().method() === "PUT") {
+    const body = route.request().postDataJSON();
+    writes.push({ path: url.pathname, body });
+    const eligible = organizationId === org1 ? [rep1, rep2] : [otherRep];
+    current[organizationId] = { salesRepresentative: eligible.find((rep) => rep.membershipId === body.salesRepresentativeMembershipId) ?? null, bridgeAdmin: body.bridgeAdminUserId === admin.userId ? admin : null };
+  }
+  return route.fulfill({ json: { routing: current[organizationId] } });
 }
 
-
-const rep1 = { membershipId: "77777777-7777-4777-8777-777777777777", userId: "88888888-8888-4888-8888-888888888888", displayName: "Assigned Rep" };
-const rep2 = { membershipId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", displayName: "New Rep" };
-const admin = { userId: "99999999-9999-4999-8999-999999999999", displayName: "Assigned Admin" };
-const inbox = { requests: [{ id: "66666666-6666-4666-8666-666666666666", status: "new", firstName: "Synthetic sender", message: "Assigned inquiry", createdAt: "2026-10-11T00:00:00Z" }], pageInfo: { limit: 20, offset: 0, hasMore: false } };
-
-test("specific admin recipient without organization membership sees assigned inbox only", async ({ page }, info) => {
-  const actions = [];
-  const who = identity(); who.memberships = []; who.user.platformRoles = ["admin"];
-  const errors = await setup(page, async (route, url) => {
-    if (url.pathname.endsWith("/inbox-organizations")) return route.fulfill({ json: { organizations: [{ id: org1, name: "Assigned business" }] } });
-    if (url.pathname.includes("/organizations/" + org1 + "/contact-requests")) {
-      if (route.request().method() === "POST") { actions.push(route.request().postDataJSON()); return route.fulfill({ json: { request: { status: "responded" } } }); }
-      return route.fulfill({ json: inbox });
-    }
-    return false;
-  }, "owner", who);
-  await openPage(page, "/requests");
-  await expect(page.getByRole("heading", { name: "Contact request inbox" })).toBeVisible();
-  await expect(page.getByLabel("Organization", { exact: true }).locator("option")).toHaveCount(1);
-  await expect(page.getByText("Assigned inquiry", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Manage contact routing" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Mark responded", exact: true }).click();
-  await expect.poll(() => actions.length).toBe(1);
-  expect(actions[0]).toEqual({ status: "responded" });
-  await evidence(page, info, "specific-recipient", errors);
-});
-
-test("global admin status alone grants no inbox and failed discovery can retry", async ({ page }, info) => {
-  let attempt = 0;
-  const who = identity(); who.memberships = []; who.user.platformRoles = ["admin"];
-  const errors = await setup(page, async (route, url) => {
-    if (!url.pathname.endsWith("/inbox-organizations")) return false;
-    attempt++;
-    if (attempt === 1) return route.fulfill({ status: 503, json: { error: "UNAVAILABLE", message: "Inbox service unavailable" } });
-    return route.fulfill({ json: { organizations: [] } });
-  }, "owner", who);
-  await openPage(page, "/requests");
-  await expect(page.locator("main .form-error[role=alert]")).toHaveText("Inbox service unavailable");
-  await expect(page.getByRole("button", { name: "Mark responded" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Retry inbox access" }).click();
-  await expect(page.getByRole("heading", { name: "No available inboxes" })).toBeVisible();
-  await expect(page.getByLabel("Organization", { exact: true })).toHaveCount(0);
-  await evidence(page, info, "no-inbox", errors.filter(e => !e.includes("503")));
-});
-
-test("owner selects bounded representative, preserves admin, then clears to owner fallback", async ({ page }, info) => {
-  let routing = { salesRepresentative: rep1, bridgeAdmin: admin };
-  let failRead = true, failSave = true;
-  const saves = [];
-  const errors = await setup(page, async (route, url) => {
-    if (url.pathname.endsWith("/inbox-organizations")) return route.fulfill({ json: { organizations: [{ id: org1, name: "First organization" }] } });
-    if (url.pathname.endsWith("/contact-routing/candidates")) return route.fulfill({ json: { candidates: { salesRepresentatives: [rep1, rep2], bridgeAdmin: admin } } });
-    if (url.pathname.endsWith("/contact-routing")) {
-      if (route.request().method() === "PUT") {
-        saves.push(route.request().postDataJSON());
-        if (failSave) { failSave = false; return route.fulfill({ status: 409, json: { error: "STALE_ASSIGNMENT", message: "Assignment changed. Try again." } }); }
-        const body = saves.at(-1);
-        routing = { salesRepresentative: body.salesRepresentativeMembershipId === rep2.membershipId ? rep2 : null, bridgeAdmin: body.bridgeAdminUserId ? admin : null };
-        return route.fulfill({ json: { routing } });
-      }
-      if (failRead) { failRead = false; return route.fulfill({ status: 503, json: { error: "UNAVAILABLE", message: "Routing unavailable" } }); }
-      return route.fulfill({ json: { routing } });
-    }
-    if (url.pathname.endsWith("/contact-requests")) return route.fulfill({ json: inbox });
-    return false;
-  });
-  await openPage(page, "/requests");
-  await page.getByRole("button", { name: "Manage contact routing" }).click();
-  await expect(page.locator("main .form-error[role=alert]")).toHaveText("Routing unavailable");
-  await expect(page.getByRole("button", { name: "Save routing changes" })).toHaveCount(0);
-  expect(saves).toHaveLength(0);
-  await page.getByRole("button", { name: "Retry routing" }).click();
-  const selector = page.getByLabel("Assigned sales representative", { exact: true });
-  await expect(selector).toHaveValue(rep1.membershipId);
-  await expect(selector.locator("option")).toHaveCount(3);
-  await expect(page.getByRole("button", { name: "Save routing changes" })).toBeDisabled();
-  await selector.selectOption(rep2.membershipId);
-  await page.getByRole("button", { name: "Save routing changes" }).click();
-  await expect(page.locator("main .form-error[role=alert]")).toHaveText("Assignment changed. Try again.");
-  await expect(selector).toHaveValue(rep2.membershipId);
-  await page.getByRole("button", { name: "Save routing changes" }).click();
-  await expect(page.getByText("Contact routing saved.", { exact: true })).toBeVisible();
-  expect(saves.at(-1)).toEqual({ salesRepresentativeMembershipId: rep2.membershipId, bridgeAdminUserId: admin.userId });
-  await selector.selectOption("");
-  await page.getByLabel("Remove assigned Bridge administrator").check();
-  await page.getByRole("button", { name: "Save routing changes" }).click();
-  await expect(page.getByText("Contact routing saved.", { exact: true })).toBeVisible();
-  expect(saves.at(-1)).toEqual({ salesRepresentativeMembershipId: null, bridgeAdminUserId: null });
-  await expect(page.getByLabel("Remove assigned Bridge administrator")).toHaveCount(0);
-  await evidence(page, info, "routing-owner-fallback", errors.filter(e => !e.includes("503") && !e.includes("409")));
-});
-
-test("switching inbox hides old routing and scopes subsequent edits", async ({ page }, info) => {
-  const saves = [];
-  const errors = await setup(page, async (route, url) => {
-    if (url.pathname.endsWith("/inbox-organizations")) return route.fulfill({ json: { organizations: [{ id: org1, name: "First organization" }, { id: org2, name: "Second organization" }] } });
-    if (url.pathname.endsWith("/contact-routing/candidates")) return route.fulfill({ json: { candidates: { salesRepresentatives: [rep2], bridgeAdmin: null } } });
-    if (url.pathname.endsWith("/contact-routing")) {
-      if (route.request().method() === "PUT") { saves.push(url.pathname); return route.fulfill({ json: { routing: { salesRepresentative: rep2, bridgeAdmin: null } } }); }
-      return route.fulfill({ json: { routing: { salesRepresentative: null, bridgeAdmin: null } } });
-    }
-    if (url.pathname.endsWith("/contact-requests")) return route.fulfill({ json: inbox });
-    return false;
-  });
-  await openPage(page, "/requests");
-  await page.getByRole("button", { name: "Manage contact routing" }).click();
-  await expect(page.getByLabel("Assigned sales representative", { exact: true })).toBeVisible();
-  await page.getByLabel("Organization", { exact: true }).selectOption(org2);
-  await expect(page.getByLabel("Assigned sales representative", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Manage contact routing" }).click();
-  await page.getByLabel("Assigned sales representative", { exact: true }).selectOption(rep2.membershipId);
-  await page.getByRole("button", { name: "Save routing changes" }).click();
-  await expect(page.getByText("Contact routing saved.", { exact: true })).toBeVisible();
-  expect(saves).toEqual(["/api/v1/organizations/" + org2 + "/directory-profile/contact-routing"]);
-  await evidence(page, info, "routing-scope", errors);
-});
-
-test("older API 404 keeps owner inbox while contact selector stays read only", async ({ page }, info) => {
+test("removing the configured admin clears an ineligible representative instead of resubmitting it", async ({ page }) => {
+  const staleRep = { ...rep1, membershipId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" };
+  const current = { [org1]: { salesRepresentative: staleRep, bridgeAdmin: admin }, [org2]: { salesRepresentative: otherRep, bridgeAdmin: null } };
   const writes = [];
-  const errors = await setup(page, async (route, url) => {
-    if (route.request().method() !== "GET") writes.push(url.pathname);
-    if (url.pathname.endsWith("/inbox-organizations") || url.pathname.endsWith("/contact-routing/candidates")) return route.fulfill({ status: 404, json: { error: "NOT_FOUND", message: "Not found" } });
-    if (url.pathname.endsWith("/contact-routing")) return route.fulfill({ json: { routing: { salesRepresentative: rep1, bridgeAdmin: admin } } });
-    if (url.pathname.endsWith("/contact-requests")) return route.fulfill({ json: inbox });
-    return false;
+  const state = await setup(page, (route, url) => routingFixture(route, url, current, writes));
+  await openPage(page); await routingToggle(page).click();
+  await expect(salesSelector(page)).toHaveValue(staleRep.membershipId);
+  await page.getByRole("checkbox", { name: "Remove assigned Bridge administrator", exact: true }).check();
+  await saveAndWait(page, writes, 1);
+  expect(writes).toEqual([{ path: routingPath(org1), body: { salesRepresentativeMembershipId: null, bridgeAdminUserId: null } }]);
+  await expect(salesSelector(page)).toHaveValue("");
+  await evidence(page, state);
+});
+async function saveAndWait(page, writes, count) {
+  await saveButton(page).click();
+  await expect.poll(() => writes.length).toBe(count);
+  await expect(salesSelector(page)).toBeEnabled();
+  await expect(saveButton(page)).toBeDisabled();
+  await expect(page.getByText("Contact routing saved.", { exact: true })).toBeVisible();
+}
+
+for (const role of ["owner", "admin"]) {
+  test(`${role} uses the bounded organization roster and exact assignment/clearing payloads`, async ({ page }) => {
+    const current = { [org1]: { salesRepresentative: rep1, bridgeAdmin: admin }, [org2]: { salesRepresentative: otherRep, bridgeAdmin: null } };
+    const writes = [];
+    const state = await setup(page, (route, url) => routingFixture(route, url, current, writes), identity(role));
+    await openPage(page);
+    await expect(page.getByLabel("Organization", { exact: true }).locator("option")).toHaveText(["First organization", "Second organization"]);
+    await expect(page.getByText(incoming.subject, { exact: true })).toBeVisible();
+    expect(state.calls.filter((call) => call.path.includes("contact-routing"))).toEqual([]);
+    await routingToggle(page).click();
+    await expect(salesSelector(page)).toHaveValue(rep1.membershipId);
+    await expect(salesSelector(page).locator("option")).toHaveText(["No sales representative", rep1.displayName, rep2.displayName]);
+    await expect(page.getByText(otherRep.displayName, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(admin.displayName, { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Contact routing", exact: true }).getByRole("combobox")).toHaveCount(1);
+    await expect(saveButton(page)).toBeDisabled();
+
+    await salesSelector(page).selectOption(rep2.membershipId);
+    await saveAndWait(page, writes, 1);
+    await salesSelector(page).selectOption("");
+    await saveAndWait(page, writes, 2);
+    await salesSelector(page).selectOption(rep1.membershipId);
+    await page.getByLabel("Remove assigned Bridge administrator", { exact: true }).check();
+    await saveAndWait(page, writes, 3);
+    await expect(page.getByLabel("Remove assigned Bridge administrator", { exact: true })).toHaveCount(0);
+    await salesSelector(page).selectOption("");
+    await saveAndWait(page, writes, 4);
+    // A subsequent sales edit must not restore the removed admin from stale candidates.
+    await salesSelector(page).selectOption(rep2.membershipId);
+    await saveAndWait(page, writes, 5);
+    expect(writes).toEqual([
+      { path: routingPath(org1), body: { salesRepresentativeMembershipId: rep2.membershipId, bridgeAdminUserId: admin.userId } },
+      { path: routingPath(org1), body: { salesRepresentativeMembershipId: null, bridgeAdminUserId: admin.userId } },
+      { path: routingPath(org1), body: { salesRepresentativeMembershipId: rep1.membershipId, bridgeAdminUserId: null } },
+      { path: routingPath(org1), body: { salesRepresentativeMembershipId: null, bridgeAdminUserId: null } },
+      { path: routingPath(org1), body: { salesRepresentativeMembershipId: rep2.membershipId, bridgeAdminUserId: null } },
+    ]);
+    await evidence(page, state);
   });
-  await openPage(page, "/requests");
-  await expect(page.getByLabel("Organization", { exact: true })).toHaveValue(org1);
-  await expect(page.getByText("Assigned inquiry", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Showing your owner\/admin business inboxes/)).toBeVisible();
-  await page.getByRole("button", { name: "Manage contact routing" }).click();
-  await expect(page.getByText(/Contact selection is not available on this API yet/)).toBeVisible();
-  await expect(page.getByLabel("Assigned sales representative", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Save routing changes" })).toHaveCount(0);
-  expect(writes).toEqual([]);
-  await evidence(page, info, "legacy-api", errors.filter(e => !e.includes("404")));
+}
+
+for (const scenario of [
+  { name: "ordinary member", who: identity("member") },
+  { name: "sales-rep page manager", who: identity("page_manager", "sales_rep") },
+  { name: "inactive owner", who: { ...identity(), memberships: identity().memberships.map((item) => ({ ...item, status: "suspended" })) } },
+  { name: "global admin without organization membership", who: { ...identity(), user: { ...identity().user, platformRoles: ["admin"] }, memberships: [] } },
+]) {
+  test(`${scenario.name} gets no organization routing controls or discovery`, async ({ page }) => {
+    const state = await setup(page, () => false, scenario.who);
+    await openPage(page);
+    await expect(page.getByRole("heading", { name: "No accessible inbox", exact: true })).toBeVisible();
+    await expect(routingToggle(page)).toHaveCount(0);
+    await expect(page.getByLabel("Organization", { exact: true })).toHaveCount(0);
+    expect(state.calls.filter((call) => call.path.includes("/organizations/") || call.path.includes("/contact-requests/"))).toEqual([]);
+    await evidence(page, state);
+  });
+}
+
+test("default inbox uses only active owner/admin memberships without discovery", async ({ page }) => {
+  const who = identity(); who.memberships[1].role = "member";
+  who.memberships.push({ ...who.memberships[0], organizationId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", organizationName: "Inactive admin organization", role: "admin", status: "suspended" });
+  const state = await setup(page, (route, url) => url.pathname === inboxPath(org1) ? route.fulfill({ json: inbox }) : false, who);
+  await openPage(page);
+  await expect(page.getByLabel("Organization", { exact: true }).locator("option")).toHaveText(["First organization"]);
+  await expect(page.getByText(incoming.subject, { exact: true })).toBeVisible();
+  await expect(routingToggle(page)).toBeVisible();
+  expect(state.calls.filter((call) => call.path.includes("/organizations/")).map((call) => call.path)).toEqual([inboxPath(org1)]);
+  await evidence(page, state);
 });
 
-test("discovery 403 never falls back to owner memberships", async ({ page }, info) => {
-  let inboxReads = 0;
-  const errors = await setup(page, async (route, url) => {
-    if (url.pathname.endsWith("/inbox-organizations")) return route.fulfill({ status: 403, json: { error: "FORBIDDEN", message: "Inbox access denied" } });
-    if (url.pathname.endsWith("/contact-requests")) { inboxReads++; return route.fulfill({ json: inbox }); }
-    return false;
+for (const assigned of [identity("page_manager", "sales_rep"), { ...identity(), user: { ...identity().user, platformRoles: ["admin"] }, memberships: [] }]) {
+  test(`${assigned.user.accountType === "sales_rep" ? "sales rep" : "assigned platform admin"} opens and transitions only an exact assigned request`, async ({ page }) => {
+    const exactPath = `/api/v1/contact-requests/${requestId}`;
+    let status = "new";
+    const state = await setup(page, (route, url) => {
+      if (url.pathname === exactPath) return route.fulfill({ json: { request: { ...incoming, status } } });
+      if (url.pathname === exactPath + "/status" && route.request().method() === "POST") { status = route.request().postDataJSON().status; return route.fulfill({ json: { request: { id: requestId, status } } }); }
+      return false;
+    }, assigned);
+    await openPage(page, `/requests?requestId=${requestId}`);
+    await expect(page.getByText(incoming.subject, { exact: true })).toBeVisible();
+    await expect(routingToggle(page)).toHaveCount(0);
+    await page.getByRole("button", { name: "Mark responded", exact: true }).click();
+    await expect(page.getByText("responded", { exact: true })).toBeVisible();
+    expect(state.calls.filter((call) => call.method === "POST")).toEqual([{ path: exactPath + "/status", method: "POST", body: { status: "responded" } }]);
+    expect(state.calls.filter((call) => call.path.includes("/organizations/"))).toEqual([]);
+    await evidence(page, state);
   });
-  await openPage(page, "/requests");
-  await expect(page.locator("main .form-error[role=alert]")).toHaveText("Inbox access denied");
-  await expect(page.getByLabel("Organization", { exact: true })).toHaveCount(0);
-  expect(inboxReads).toBe(0);
-  await evidence(page, info, "forbidden-inbox", errors.filter(e => !e.includes("403")));
-});
+}
+
+for (const { status, candidates } of [{ status: 400, candidates: false }, { status: 403, candidates: true }, { status: 404, candidates: true }, { status: 503, candidates: false }]) {
+  test(`routing ${candidates ? "roster" : "assignment"} read ${status} cannot save defaults and retries from authoritative state`, async ({ page }) => {
+    const gate = deferred(); const started = deferred();
+    const current = { [org1]: { salesRepresentative: rep1, bridgeAdmin: admin }, [org2]: { salesRepresentative: otherRep, bridgeAdmin: null } };
+    const writes = []; let reads = 0;
+    const failingPath = routingPath(org1) + (candidates ? "/candidates" : "");
+    const state = await setup(page, async (route, url, result) => {
+      if (url.pathname === failingPath && route.request().method() === "GET") {
+        reads++;
+        if (reads === 1) return failRead(route, result, status, `Synthetic routing read ${status}`);
+        if (reads === 2) { started.resolve(); await gate.promise; }
+      }
+      return routingFixture(route, url, current, writes);
+    });
+    try {
+      await openPage(page);
+      await routingToggle(page).click();
+      await expect(appError(page)).toHaveText(`Synthetic routing read ${status}`);
+      await expect(salesSelector(page)).toHaveCount(0);
+      await expect(saveButton(page)).toHaveCount(0);
+      expect(writes).toEqual([]);
+      await page.getByRole("button", { name: "Retry routing", exact: true }).click();
+      await started.promise;
+      await expect(page.getByText("Loading contact routing…", { exact: true })).toBeVisible();
+      await expect(saveButton(page)).toHaveCount(0);
+      expect(writes).toEqual([]);
+      gate.resolve();
+      await expect(salesSelector(page)).toHaveValue(rep1.membershipId);
+      await expect(saveButton(page)).toBeDisabled();
+      await expect(appError(page)).toHaveCount(0);
+      await salesSelector(page).selectOption(rep2.membershipId);
+      await saveAndWait(page, writes, 1);
+      expect(writes[0]).toEqual({ path: routingPath(org1), body: { salesRepresentativeMembershipId: rep2.membershipId, bridgeAdminUserId: admin.userId } });
+      await evidence(page, state);
+    } finally { gate.resolve(); }
+  });
+}
+
+for (const lateFirstOrganization of [false, true]) {
+  test(lateFirstOrganization ? "late first-organization routing response cannot replace the second organization" : "changing organization removes loaded routing controls before its next read", async ({ page }) => {
+    const gate = deferred(); const started = deferred(); const delivered = deferred();
+    const current = { [org1]: { salesRepresentative: rep1, bridgeAdmin: admin }, [org2]: { salesRepresentative: null, bridgeAdmin: null } };
+    const writes = [];
+    const state = await setup(page, async (route, url) => {
+      const heldPath = routingPath(lateFirstOrganization ? org1 : org2);
+      if (url.pathname === heldPath && route.request().method() === "GET") {
+        started.resolve(); await gate.promise;
+        await route.fulfill({ json: { routing: current[lateFirstOrganization ? org1 : org2] } });
+        delivered.resolve(); return;
+      }
+      return routingFixture(route, url, current, writes);
+    });
+    try {
+      await openPage(page);
+      await routingToggle(page).click();
+      if (lateFirstOrganization) await started.promise;
+      else await expect(salesSelector(page)).toHaveValue(rep1.membershipId);
+      await page.getByLabel("Organization", { exact: true }).selectOption(org2);
+      await expect(salesSelector(page)).toHaveCount(0);
+      await expect(routingToggle(page)).toHaveAttribute("aria-expanded", "false");
+      await routingToggle(page).click();
+      if (!lateFirstOrganization) {
+        await started.promise;
+        await expect(salesSelector(page)).toHaveCount(0);
+        const response = page.waitForResponse((result) => result.url() === origin + routingPath(org2) && result.request().method() === "GET");
+        gate.resolve(); await (await response).finished(); await delivered.promise;
+      } else {
+        await expect(salesSelector(page)).toHaveValue("");
+        const response = page.waitForResponse((result) => result.url() === origin + routingPath(org1) && result.request().method() === "GET");
+        gate.resolve(); await (await response).finished(); await delivered.promise;
+      }
+      await expect(salesSelector(page)).toHaveValue("");
+      await expect(salesSelector(page).locator("option")).toHaveText(["No sales representative", otherRep.displayName]);
+      await expect(page.getByText(admin.displayName, { exact: true })).toHaveCount(0);
+      await salesSelector(page).selectOption(otherRep.membershipId);
+      await saveAndWait(page, writes, 1);
+      expect(writes).toEqual([{ path: routingPath(org2), body: { salesRepresentativeMembershipId: otherRep.membershipId, bridgeAdminUserId: null } }]);
+      await evidence(page, state);
+    } finally { gate.resolve(); }
+  });
+}
