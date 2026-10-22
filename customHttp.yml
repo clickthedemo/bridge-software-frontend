@@ -1,0 +1,6 @@
+# Amplify custom headers (same rule as netlify.toml): deploy checks read this file, so never cache it.
+customHeaders:
+  - pattern: '/build-info.json'
+    headers:
+      - key: 'Cache-Control'
+        value: 'no-store'
