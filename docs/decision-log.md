@@ -1,5 +1,9 @@
 # Bridge decision log
 
+## AWS Amplify hosting kit prepared, not adopted — 2026-10-22
+
+`amplify.yml`, `customHttp.yml` and `docs/deploy-aws-amplify.md` are an unproven plan for hosting this site in Bridge's own AWS account. Amplify's docs list managed SSR for Next.js 12 to 15 and this app is on 16, so a trial build must pass first; the fallback is a container on ECS Express Mode. Netlify stays the live host and `netlify.toml` is unchanged. D-06 below (is AWS a hard requirement) is still open.
+
 ## Phase Four source recovery — 2026-10-11
 
 Recovered Miraj's vendor frontend at 6a40eb352b3ea6296bce871296216cc147a89aa0 and backend contract at 3892ac3cb407c1aa101b464356acc3440dea1135. The integration patch aligns profile roles/revisions/links and public Directory filters with Tori's October 6 workbook, preserving Connected styling. Backend authorization remains authoritative; recipient-scoped inbox authorization, real RLS tests and deployment bindings remain acceptance gaps. See `docs/m4-recovery-2026-10-11.md`. This records implementation scope, not a completed deployment or client QA receipt.

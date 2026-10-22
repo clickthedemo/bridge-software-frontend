@@ -11,8 +11,9 @@ frontend:
     build:
       commands:
         # write-build-info.mjs reads Netlify's COMMIT_REF/CONTEXT; map Amplify's
-        # AWS_COMMIT_ID/AWS_BRANCH onto them so /build-info.json keeps reporting the deployed SHA.
-        - COMMIT_REF="$AWS_COMMIT_ID" CONTEXT="$(if [ "$AWS_BRANCH" = production ]; then echo production; else echo branch-deploy; fi)" npm run build
+        # AWS_BRANCH onto CONTEXT. AWS_COMMIT_ID is the literal "HEAD" on rebuilds (env var
+        # change, Redeploy), so read the SHA from git and keep AWS_COMMIT_ID only as fallback.
+        - COMMIT_REF="$(git rev-parse HEAD 2>/dev/null || echo "$AWS_COMMIT_ID")" CONTEXT="$(if [ "$AWS_BRANCH" = production ]; then echo production; else echo branch-deploy; fi)" npm run build
   artifacts:
     baseDirectory: .next
     files:

@@ -1,5 +1,16 @@
-# Amplify custom headers (same rule as netlify.toml): deploy checks read this file, so never cache it.
+# Amplify custom headers. Amplify ignores Netlify's public/_headers, so the first rule repeats it
+# (noindex, nosniff, no referrer). At launch remove X-Robots-Tag here, in public/_headers and in
+# app/layout.tsx (`robots`) together. The second rule is the same as netlify.toml: deploy checks
+# read /build-info.json, so never cache it.
 customHeaders:
+  - pattern: '**'
+    headers:
+      - key: 'X-Robots-Tag'
+        value: 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+      - key: 'Referrer-Policy'
+        value: 'no-referrer'
+      - key: 'X-Content-Type-Options'
+        value: 'nosniff'
   - pattern: '/build-info.json'
     headers:
       - key: 'Cache-Control'
