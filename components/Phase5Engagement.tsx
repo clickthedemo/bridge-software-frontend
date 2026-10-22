@@ -12,6 +12,7 @@ import {
   type PublicAnnouncement, type PublicPost, type SavedProfile,
 } from "@/lib/phase5/engagement";
 import { isPhase3LiveApi } from "@/lib/phase3";
+import { ReportButton } from "@/components/Phase6Moderation";
 
 const dateLabel = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
 const statusLabel: Record<EngagementStatus, string> = { draft: "Draft", published: "Published", archived: "Archived" };
@@ -66,7 +67,7 @@ export function ProfilePosts({ slug }: { slug: string }) {
     {feed.error && !feed.items ? <><p className="form-error" role="alert">{feed.error}</p><button className="button secondary" onClick={feed.retry} type="button">Try again</button></>
       : !feed.items ? <p role="status">Loading updates…</p>
       : !feed.items.length ? <p>No updates from this business yet.</p>
-      : <>{feed.items.map((post) => <article key={post.id}><h3>{post.title}</h3><p className="form-hint">{dateLabel(post.publishedAt)}</p><p style={{ whiteSpace: "pre-line" }}>{post.body}</p></article>)}
+      : <>{feed.items.map((post) => <article key={post.id}><h3>{post.title}</h3><p className="form-hint">{dateLabel(post.publishedAt)}</p><p style={{ whiteSpace: "pre-line" }}>{post.body}</p><ReportButton target={{ type: "post", postId: post.id, label: post.title }} /></article>)}
         {feed.error && <p className="form-error" role="alert">{feed.error}</p>}
         {feed.cursor && <button className="button secondary" disabled={feed.loadingMore} onClick={() => void feed.more()} type="button">{feed.loadingMore ? "Loading…" : "Show older updates"}</button>}</>}
   </section>;
