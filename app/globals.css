@@ -392,13 +392,30 @@ nav a {
   font-weight: 650;
 }
 
-#site-nav {
-  gap: 12px;
-}
+/* At full shell width the signed-in main nav holds up to eleven links on one
+   line. The sign-out error hangs below the nav so it never widens the row. */
+@media (min-width: 1181px) {
+  #site-nav {
+    gap: 12px;
+    position: relative;
+  }
 
-#site-nav a,
-#site-nav .nav-sign-out {
-  white-space: nowrap;
+  #site-nav a,
+  #site-nav .nav-sign-out {
+    white-space: nowrap;
+  }
+
+  #site-nav > [role="alert"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin: 0;
+    padding: 8px 12px;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    white-space: nowrap;
+  }
 }
 
 nav a:hover {
@@ -1994,7 +2011,7 @@ th {
     display: inline-flex;
   }
 
-  nav[data-open] {
+  #site-nav[data-open] {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     box-shadow: var(--shadow);
@@ -2006,7 +2023,7 @@ th {
     top: 100%;
   }
 
-  nav[data-open] a {
+  #site-nav[data-open] a {
     align-items: center;
     border-radius: 10px;
     display: flex;
@@ -2014,14 +2031,14 @@ th {
     padding-inline: 10px;
   }
 
-  nav[data-open] .nav-sign-out {
+  #site-nav[data-open] .nav-sign-out {
     border-radius: 10px;
     min-height: 44px;
     padding-inline: 10px;
     text-align: left;
   }
 
-  nav[data-open] a[aria-current="page"] {
+  #site-nav[data-open] a[aria-current="page"] {
     background: var(--accent-soft);
     color: var(--accent);
   }
