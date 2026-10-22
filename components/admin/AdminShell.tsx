@@ -12,6 +12,7 @@ const navigation = [
   { href: "/admin/directory-profiles", label: "Directory profiles", icon: "D" },
   { href: "/admin/users", label: "Users", icon: "+" },
   { href: "/admin/announcements", label: "Announcements", icon: "A" },
+  { href: "/admin/flags", label: "Reports", icon: "!" },
   { href: "/admin/settings", label: "Settings", icon: "⚙", exact: true },
   { href: "/admin/settings/password", label: "Password", icon: "◇" },
 ];

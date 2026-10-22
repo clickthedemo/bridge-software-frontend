@@ -1,5 +1,9 @@
 # Bridge decision log
 
+## Phase 6 reports and admin tools — 2026-10-22
+
+Report reasons default to spam, false or misleading claims, prohibited product or medical claim, harassment and other; the backend enum (bridge-software-backend `docs/phase-6-admin-moderation-api.md`) is the source and Tori can change the list with a forward migration. The reason has no preselected value, so a report always carries a reason the member chose. Only signed-in members with an active organization see the Report action, because `POST /flags` refuses everyone else. The admin dashboard shows only counts that need action plus published-content totals; the earlier static "Active roles", "Account status", "Portal access" and "Total users" cards were removed (Users stays one click away in the admin navigation).
+
 ## AWS Amplify hosting kit prepared, not adopted — 2026-10-22
 
 `amplify.yml`, `customHttp.yml` and `docs/deploy-aws-amplify.md` are an unproven plan for hosting this site in Bridge's own AWS account. Amplify's docs list managed SSR for Next.js 12 to 15 and this app is on 16, so a trial build must pass first; the fallback is a container on ECS Express Mode. Netlify stays the live host and `netlify.toml` is unchanged. D-06 below (is AWS a hard requirement) is still open.

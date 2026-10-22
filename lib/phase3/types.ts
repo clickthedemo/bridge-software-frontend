@@ -66,6 +66,7 @@ export type AdminUser = {
   emailVerified: boolean;
   createdAt: string;
   lastSignInAt: string | null;
+  deactivated?: boolean;
   accountType: string | null;
   platformRole: string | null;
   organizationMemberships: { organizationId: string; organizationName: string; role: string }[];

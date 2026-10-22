@@ -5562,3 +5562,10 @@ body:has(.mandatory-review-backdrop) .bridge-tabbar {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
+
+/* Phase 6: reports and the dashboard needs-you list */
+.report-form { margin-top: 0.75rem; max-width: 32rem; }
+.admin-needs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.admin-needs-list li a, .admin-needs-list li span { display: flex; align-items: baseline; gap: 0.6rem; min-height: 44px; padding: 0.5rem 0.75rem; border-radius: 0.75rem; background: var(--surface-2, rgba(255, 255, 255, 0.04)); color: inherit; text-decoration: none; }
+.admin-needs-list li a:hover, .admin-needs-list li a:focus-visible { outline: 2px solid var(--accent, #b983ff); outline-offset: 2px; }
+.admin-needs-list strong { font-size: 1.4rem; line-height: 1; }
