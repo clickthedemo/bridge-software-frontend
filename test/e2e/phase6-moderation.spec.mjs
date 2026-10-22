@@ -17,7 +17,7 @@ async function setup(page, state, handler) {
   await page.addInitScript(() => localStorage.setItem("bridge-age-confirmed-v1", "confirmed"));
   await page.route("https://bridge-api.example.test/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/v1/auth/me") return route.fulfill({ json: state.me });
+    if (url.pathname === "/api/v1/auth/me") return state.me ? route.fulfill({ json: state.me }) : route.fulfill({ status: 401, json: { error: "UNAUTHORIZED", message: "Sign in" } });
     if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
     if (url.pathname === "/api/v1/saved-profiles") return route.fulfill({ json: { savedProfiles: [], pageInfo: { limit: 100, offset: 0, hasMore: false } } });
     const result = await handler(route, url);
@@ -58,7 +58,7 @@ test("a member reports an update, an admin archives it, and it leaves the public
   // Member: the profile shows the update with a report action.
   await openPage(page, "/profile/fixture-a");
   await expect(page.getByRole("heading", { name: "Fall line" })).toBeVisible();
-  await page.getByRole("button", { name: "Report this update" }).click();
+  await page.getByRole("button", { name: "Report this update: Fall line", exact: true }).click();
   const form = page.getByRole("form", { name: "Report this update: Fall line" });
   await form.getByLabel("Reason").selectOption("spam");
   await form.getByLabel("Details (optional)").fill("Seen it twice");
@@ -80,7 +80,7 @@ test("a member reports an update, an admin archives it, and it leaves the public
   await expect(dialog.locator(".form-error[role=\"alert\"]")).toHaveText("A reason is required.");
   await dialog.getByLabel("Reason (required)").fill("Repeated spam");
   await dialog.getByRole("button", { name: "Confirm archive post" }).click();
-  await expect(page.getByRole("status")).toHaveText("Archive post completed for Fall line.");
+  await expect(page.locator(".success-message")).toHaveText("Archive post completed for Fall line.");
   await expect(page.getByRole("heading", { name: "No open reports" })).toBeVisible();
   expect(state.decisions).toEqual([{ resolution: "post_archived", note: "Repeated spam" }]);
   await page.getByRole("button", { name: "Resolved" }).click();
@@ -93,6 +93,8 @@ test("a member reports an update, an admin archives it, and it leaves the public
   await openPage(page, "/profile/fixture-a");
   await expect(page.getByText("No updates from this business yet.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Fall line" })).toHaveCount(0);
+  // A platform admin has no active organization, and POST /flags would refuse them, so no Report action.
+  await expect(page.getByRole("button", { name: /^Report this/ })).toHaveCount(0);
 });
 
 test("reports surface permission denied and duplicate states without a second submit", async ({ page }) => {
@@ -104,7 +106,12 @@ test("reports surface permission denied and duplicate states without a second su
     return false;
   });
   await openPage(page, "/profile/fixture-a");
-  await page.getByRole("button", { name: "Report this profile" }).click();
+  await page.getByRole("button", { name: "Report this profile: Fixture A" }).click();
+  // No preselected reason: sending without one is refused before any request.
+  await page.getByRole("button", { name: "Send report" }).click();
+  await expect(page.locator(".report-form .form-error[role=\"alert\"]")).toHaveText("Choose a reason.");
+  expect(attempts).toBe(0);
+  await page.getByLabel("Reason").selectOption("harassment");
   await page.getByRole("button", { name: "Send report" }).click();
   await expect(page.locator(".report-form .form-error[role=\"alert\"]")).toHaveText("Only active members can report content.");
   await page.getByRole("button", { name: "Send report" }).click();
@@ -114,13 +121,13 @@ test("reports surface permission denied and duplicate states without a second su
 });
 
 test("the admin dashboard lists what needs attention and the user panel deactivates a user", async ({ page }, testInfo) => {
-  const state = { me: admin, deactivated: false, actions: [] };
+  const state = { me: admin, deactivated: false, actions: [], detailReads: 0 };
   const listed = () => ({ users: [{ id: TARGET_ID, email: "target@example.test", displayName: "Target User", emailVerified: true, createdAt: "2026-10-01T00:00:00Z", lastSignInAt: "2026-10-20T12:00:00Z", deactivated: state.deactivated, accountType: "standard", platformRole: null, organizationMemberships: [{ organizationId: ORG_B, organizationName: "Fixture B", role: "owner" }] }], pagination: { page: 1, pageSize: 50, total: 1 } });
   await setup(page, state, async (route, url) => {
     const method = route.request().method();
     if (url.pathname === "/api/v1/admin/dashboard/summary") return route.fulfill({ json: { summary: { pendingEinChecks: 2, profilesAwaitingReview: 1, openFlags: 3, publishedPosts: 4, publishedAnnouncements: 1, contactRequestsWaiting: 0, generatedAt: "2026-10-22T12:00:00Z" } } });
     if (url.pathname === "/api/v1/admin/users" && method === "GET") return route.fulfill({ json: listed() });
-    if (url.pathname === `/api/v1/admin/users/${TARGET_ID}` && method === "GET") return route.fulfill({ json: { user: { ...listed().users[0], bannedUntil: null }, memberships: [{ organizationId: ORG_B, organizationName: "Fixture B", organizationStatus: "active", role: "owner", status: "active", directoryProfile: { status: "approved", slug: "fixture-b" }, einVerified: true }] } });
+    if (url.pathname === `/api/v1/admin/users/${TARGET_ID}` && method === "GET") return state.detailReads++, route.fulfill({ json: { user: { ...listed().users[0], bannedUntil: null }, memberships: [{ organizationId: ORG_B, organizationName: "Fixture B", organizationStatus: "active", role: "owner", status: "active", directoryProfile: { status: "approved", slug: "fixture-b" }, einVerified: true }] } });
     if (url.pathname === `/api/v1/admin/users/${TARGET_ID}/deactivate` && method === "POST") { state.actions.push(route.request().postDataJSON()); state.deactivated = true; return route.fulfill({ json: { user: { id: TARGET_ID, active: false } } }); }
     return false;
   });
@@ -129,6 +136,7 @@ test("the admin dashboard lists what needs attention and the user panel deactiva
   await expect(needs.getByRole("link", { name: "2 EIN checks waiting" })).toHaveAttribute("href", "/admin/verification");
   await expect(needs.getByRole("link", { name: "3 Open reports" })).toHaveAttribute("href", "/admin/flags");
   await expect(needs.getByText("Contact requests waiting")).toHaveCount(0);
+  await expect(needs.getByText(/^Counts as of /)).toBeVisible();
   await noOverflow(page);
   await evidence(page, testInfo, "dashboard");
 
@@ -141,8 +149,57 @@ test("the admin dashboard lists what needs attention and the user panel deactiva
   await dialog.getByLabel("Reason (required)").fill("Left the company");
   await dialog.getByRole("button", { name: "Confirm deactivate user" }).click();
   await expect(panel.getByRole("status")).toHaveText("User deactivated. Their sessions were ended and sign-in is blocked.");
-  await expect(page.locator("table").getByText("Deactivated")).toHaveCount(2);
+  await expect(page.locator("table").getByText("Deactivated", { exact: true })).toHaveCount(2);
   expect(state.actions).toEqual([{ reason: "Left the company" }]);
+  // The panel stays mounted through the list reload: one initial read plus one refresh.
+  expect(state.detailReads).toBe(2);
   await noOverflow(page);
   await evidence(page, testInfo, "users");
+});
+
+test("signed-out visitors get one sign-in link that returns to the profile", async ({ page }) => {
+  await setup(page, { me: null }, async (route, url) => {
+    if (url.pathname === "/api/v1/directory/profiles/fixture-a") return route.fulfill({ json: profile });
+    if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: [post], nextCursor: null } });
+    return false;
+  });
+  await openPage(page, "/profile/fixture-a");
+  await expect(page.getByRole("heading", { name: "Fall line" })).toBeVisible();
+  const signIn = page.getByRole("link", { name: "Sign in to report" });
+  await expect(signIn).toHaveCount(1);
+  await expect(signIn).toHaveAttribute("href", "/login?next=%2Fprofile%2Ffixture-a");
+});
+
+test("resolving the last report on a later page returns to the previous page", async ({ page }) => {
+  const first = Array.from({ length: 50 }, (_, index) => flag({ id: `66666666-6666-4666-8666-${String(index).padStart(12, "0")}`, targetLabel: `Update ${index}` }));
+  const state = { me: admin, resolved: false };
+  await setup(page, state, async (route, url) => {
+    if (url.pathname === "/api/v1/admin/flags") {
+      const offset = Number(url.searchParams.get("offset"));
+      const flags = offset === 0 ? first : state.resolved ? [] : [flag()];
+      return route.fulfill({ json: { flags, pageInfo: { limit: 50, offset, hasMore: offset === 0 } } });
+    }
+    if (url.pathname === `/api/v1/admin/flags/${FLAG_ID}/resolve`) { state.resolved = true; return route.fulfill({ json: { flag: flag({ status: "resolved", resolution: "dismissed", resolutionNote: "Not spam", resolvedAt: "2026-10-22T13:00:00Z" }) } }); }
+    return false;
+  });
+  await openPage(page, "/admin/flags");
+  await page.getByRole("button", { name: "Next" }).click();
+  const card = page.locator(`#flag-${FLAG_ID}`);
+  await card.getByRole("button", { name: "Dismiss" }).click();
+  const dialog = page.getByRole("dialog", { name: "Dismiss" });
+  await dialog.getByLabel("Reason (required)").fill("Not spam");
+  await dialog.getByRole("button", { name: "Confirm dismiss" }).click();
+  await expect(page.locator(".success-message")).toHaveText("Dismiss completed for Fall line.");
+  await expect(page.locator(".admin-flag-list .admin-review-card")).toHaveCount(50);
+  await expect(page.getByRole("heading", { name: "No open reports" })).toHaveCount(0);
+});
+
+test("the dashboard shows permission denied without a retry loop", async ({ page }) => {
+  await setup(page, { me: admin }, async (route, url) => {
+    if (url.pathname === "/api/v1/admin/dashboard/summary") return route.fulfill({ status: 403, json: { error: "FORBIDDEN", message: "x" } });
+    return false;
+  });
+  await openPage(page, "/admin/dashboard");
+  await expect(page.getByText("This account does not have permission to view the admin dashboard.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
 });

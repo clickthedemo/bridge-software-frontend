@@ -1,5 +1,9 @@
 # Bridge decision log
 
+## Phase 6 reports and admin tools — 2026-10-22
+
+Report reasons default to spam, false or misleading claims, prohibited product or medical claim, harassment and other; the backend enum (bridge-software-backend `docs/phase-6-admin-moderation-api.md`) is the source and Tori can change the list with a forward migration. The reason has no preselected value, so a report always carries a reason the member chose. Only signed-in members with an active organization see the Report action, because `POST /flags` refuses everyone else. The admin dashboard shows only counts that need action plus published-content totals; the earlier static "Active roles", "Account status", "Portal access" and "Total users" cards were removed (Users stays one click away in the admin navigation).
+
 ## Phase Four source recovery — 2026-10-11
 
 Recovered Miraj's vendor frontend at 6a40eb352b3ea6296bce871296216cc147a89aa0 and backend contract at 3892ac3cb407c1aa101b464356acc3440dea1135. The integration patch aligns profile roles/revisions/links and public Directory filters with Tori's October 6 workbook, preserving Connected styling. Backend authorization remains authoritative; recipient-scoped inbox authorization, real RLS tests and deployment bindings remain acceptance gaps. See `docs/m4-recovery-2026-10-11.md`. This records implementation scope, not a completed deployment or client QA receipt.

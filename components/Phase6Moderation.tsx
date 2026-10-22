@@ -23,21 +23,24 @@ function Retry({ message, onRetry }: { message: string; onRetry: () => void }) {
 
 /* Report action shown on public profiles and each of their posts. */
 export function ReportButton({ target }: { target: ReportTarget }) {
-  const { status } = useAuth();
+  const { status, memberships } = useAuth();
   const id = useId();
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState<FlagReason>("spam");
+  const [reason, setReason] = useState<FlagReason | "">("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   const label = target.type === "post" ? "Report this update" : "Report this profile";
-  if (status === "unauthenticated") return <Link className="text-link" href={`/login?next=${encodeURIComponent(target.type === "profile" ? `/profile/${target.slug}` : "/directory")}`}>Sign in to report</Link>;
-  if (status !== "authenticated") return null;
+  // One sign-in link per profile page (on the profile itself), returning to that profile.
+  if (status === "unauthenticated") return target.type === "profile" ? <Link className="text-link" href={`/login?next=${encodeURIComponent(`/profile/${target.slug}`)}`}>Sign in to report</Link> : null;
+  // POST /flags accepts only members with an active organization (platform admins and invitees get 403).
+  if (status !== "authenticated" || !memberships.some((membership) => membership.status === "active")) return null;
   if (done) return <p className="form-hint" role="status">Thanks. Bridge admins will review this report.</p>;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
+    if (!reason) { setError("Choose a reason."); return; }
     const invalid = validateReportNote(note);
     if (invalid) { setError(invalid); return; }
     setBusy(true); setError("");
@@ -49,10 +52,10 @@ export function ReportButton({ target }: { target: ReportTarget }) {
     }
     finally { setBusy(false); }
   }
-  if (!open) return <button className="button ghost compact" onClick={() => setOpen(true)} type="button">{label}</button>;
+  if (!open) return <button aria-label={`${label}: ${target.label}`} className="button ghost compact" onClick={() => setOpen(true)} type="button">{label}</button>;
   return <form aria-label={`${label}: ${target.label}`} className="form-stack report-form" onSubmit={submit}>
     <label htmlFor={`${id}-reason`}>Reason</label>
-    <select id={`${id}-reason`} onChange={(event) => setReason(event.target.value as FlagReason)} value={reason}>{flagReasons.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+    <select aria-required="true" id={`${id}-reason`} onChange={(event) => setReason(event.target.value as FlagReason)} value={reason}><option disabled value="">Choose a reason</option>{flagReasons.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
     <label htmlFor={`${id}-note`}>Details (optional)</label>
     <textarea id={`${id}-note`} maxLength={1000} onChange={(event) => setNote(event.target.value)} rows={3} value={note} />
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -78,7 +81,11 @@ export function FlagQueue() {
     queueMicrotask(() => {
       if (!active) return;
       setPage(null); setLoadError(null);
-      adminApi.listFlags(status, offset).then((value) => { if (active) setPage(value); }).catch((cause) => { if (active) setLoadError(cause); });
+      adminApi.listFlags(status, offset).then((value) => {
+        if (!active) return;
+        // Resolving the last report on a later page empties it; show the previous page instead of "No open reports".
+        if (!value.flags.length && offset > 0) setOffset(Math.max(0, offset - 50)); else setPage(value);
+      }).catch((cause) => { if (active) setLoadError(cause); });
     });
     return () => { active = false; };
   }, [status, offset, revision]);
@@ -137,6 +144,7 @@ export function AdminDashboardSummary() {
     });
     return () => { active = false; };
   }, [revision]);
+  if (error instanceof M4ApiError && error.status === 403) return <div className="content-card"><p className="form-error" role="alert">This account does not have permission to view the admin dashboard.</p></div>;
   if (error) return <Retry message={moderationErrorMessage(error)} onRetry={() => setRevision((value) => value + 1)} />;
   if (!summary) return <p role="status">Loading what needs you…</p>;
   const needs = [
@@ -148,7 +156,7 @@ export function AdminDashboardSummary() {
   const waiting = needs.filter((item) => item.count > 0);
   return <>
     <section aria-labelledby="needs-you-heading" className="admin-content-card">
-      <div className="admin-card-heading"><div><h2 id="needs-you-heading">Needs you</h2><p>Work this list top to bottom once a day.</p></div></div>
+      <div className="admin-card-heading"><div><h2 id="needs-you-heading">Needs you</h2><p>Work this list top to bottom once a day.</p><p className="form-hint">Counts as of {when(summary.generatedAt)}.</p></div></div>
       {waiting.length ? <ul className="admin-needs-list">{waiting.map((item) => <li key={item.label}>{item.href ? <Link href={item.href}><strong>{item.count}</strong> {item.label}</Link> : <span><strong>{item.count}</strong> {item.label}</span>}</li>)}</ul> : <p className="admin-empty-state">Nothing is waiting on you right now.</p>}
     </section>
     <section className="admin-stat-grid" aria-label="Published content">
@@ -177,7 +185,7 @@ export function AdminUserPanel({ userId, onChanged }: { userId: string; onChange
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      setDetail(null); setLoadError(null);
+      setLoadError(null);
       load().then((value) => { if (active) { setDetail(value); setAccountType(value.user.accountType ?? "standard"); } }).catch((cause) => { if (active) setLoadError(cause); });
     });
     return () => { active = false; };

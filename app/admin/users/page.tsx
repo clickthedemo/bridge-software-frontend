@@ -62,7 +62,8 @@ export default function AdminUsersPage() {
       <div className="result-bar"><strong>{pagination?.total ?? 0} total users</strong>{pagination && <span className="form-hint">Page {pagination.page} of {lastPage}</span>}</div>
       {loading && <p className="admin-users-empty" role="status">Loading users…</p>}
       {!loading && error && <div className="admin-users-error" role="alert"><p>{error}</p><button className="button" type="button" onClick={() => setReload((value) => value + 1)}>Try again</button></div>}
-      {!loading && !error && <div className="table-scroll"><table><thead><tr><th>User</th><th>Account</th><th>Role</th><th>Status</th><th>Email</th><th>Organizations</th><th>Last sign in</th></tr></thead><tbody>
+      {/* Keep the table (and any open user panel) mounted while a reload is in flight. */}
+      {data && !error && <div className="table-scroll"><table><thead><tr><th>User</th><th>Account</th><th>Role</th><th>Status</th><th>Email</th><th>Organizations</th><th>Last sign in</th></tr></thead><tbody>
         {users.map((user) => <Fragment key={user.id}><tr>
           <td><div className="admin-user-identity"><span>{userName(user).charAt(0).toUpperCase()}</span><div><strong><button aria-controls={`user-details-${user.id}`} aria-expanded={openId === user.id} className="admin-directory-toggle" onClick={() => setOpenId(openId === user.id ? null : user.id)} type="button">{userName(user)}</button></strong><small>{user.email ?? "No email"}</small></div></div></td>
           <td>{user.accountType === "sales_rep" ? "Sales rep" : user.accountType ?? "—"}</td>
@@ -75,7 +76,7 @@ export default function AdminUsersPage() {
         <tr hidden={openId !== user.id} id={`user-details-${user.id}`}><td colSpan={7}>{openId === user.id && <AdminUserPanel onChanged={() => setReload((value) => value + 1)} userId={user.id} />}</td></tr></Fragment>)}
         {!users.length && <tr><td colSpan={7} className="admin-users-empty">No users match these filters.</td></tr>}
       </tbody></table></div>}
-      {!loading && !error && pagination && <div className="admin-users-pagination"><button className="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} type="button">Previous</button><span>Page {page} of {lastPage}</span><button className="button" disabled={page >= lastPage} onClick={() => setPage((value) => value + 1)} type="button">Next</button></div>}
+      {!error && pagination && <div className="admin-users-pagination"><button className="button" disabled={loading || page <= 1} onClick={() => setPage((value) => value - 1)} type="button">Previous</button><span>Page {page} of {lastPage}</span><button className="button" disabled={loading || page >= lastPage} onClick={() => setPage((value) => value + 1)} type="button">Next</button></div>}
     </section>
   </>;
 }

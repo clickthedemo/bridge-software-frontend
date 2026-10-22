@@ -28,7 +28,7 @@ export type AdminUserDetail = {
   memberships: AdminUserMembership[];
 };
 
-/* Default reason list (DECISIONS.md: Tori can change it later; the backend enum is the source). */
+/* Default reason list (docs/decision-log.md, Phase 6 reports: Tori can change it later; the backend enum is the source). */
 export const flagReasons: { value: FlagReason; label: string }[] = [
   { value: "spam", label: "Spam" },
   { value: "false_or_misleading", label: "False or misleading claims" },
@@ -105,10 +105,6 @@ export const adminApi = {
   },
   async resolveFlag(flagId: string, resolution: FlagResolution, note: string) {
     return parseFlag(object(await request(`/api/v1/admin/flags/${encodeURIComponent(flagId)}/resolve`, json("POST", { resolution, note: note.trim() }))).flag);
-  },
-  async archivePost(postId: string, reason: string) {
-    const root = object(await request(`/api/v1/admin/posts/${encodeURIComponent(postId)}/archive`, json("POST", { reason: reason.trim() })));
-    return { id: text(object(root.post).id), status: text(object(root.post).status) };
   },
   async dashboardSummary(): Promise<DashboardSummary> {
     const s = object(object(await request("/api/v1/admin/dashboard/summary")).summary);
