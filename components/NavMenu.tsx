@@ -10,6 +10,7 @@ import { showPublicSettings } from "@/lib/m4/navigation";
 const links = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
   { href: "/community", label: "Community News", match: (p: string) => p.startsWith("/community") },
+  { href: "/announcements", label: "Announcements", match: (p: string) => p.startsWith("/announcements") },
   { href: "/my-profile", label: "My Profile", match: (p: string) => p.startsWith("/my-profile") },
   { href: "/explore", label: "Explore", match: (p: string) => p.startsWith("/explore") || p.startsWith("/directory") },
   { href: "/verified", label: "Verified", match: (p: string) => p.startsWith("/verified") },
@@ -59,22 +60,22 @@ export function NavMenu() {
       >
         <span aria-hidden="true">{open ? "✕" : "☰"}</span> Menu
       </button>
-      <nav aria-label="Main navigation" data-open={open || undefined} id="site-nav">
+      <nav aria-label="Main navigation" data-open={open || undefined} id="site-nav" onClick={(event) => { if ((event.target as Element).closest("a")) setOpen(false); }}>
         {links.map((link) => (
           <Link
             aria-current={link.match(pathname) ? "page" : undefined}
             href={link.href}
             key={link.href}
-            onClick={() => setOpen(false)}
           >
             {link.label}
           </Link>
         ))}
-        {status === "unauthenticated" && <Link aria-current={pathname === "/login" || pathname.startsWith("/auth/") ? "page" : undefined} href="/login" onClick={() => setOpen(false)}>Sign in</Link>}
+        {status === "unauthenticated" && <Link aria-current={pathname === "/login" || pathname.startsWith("/auth/") ? "page" : undefined} href="/login">Sign in</Link>}
         {status === "authenticated" && <NotificationBell />}
-        {showPublicSettings(status, isAdmin) && <Link aria-current={pathname.startsWith("/settings") ? "page" : undefined} href="/settings" onClick={() => setOpen(false)}>Settings</Link>}
-        {status === "authenticated" && <Link aria-current={pathname.startsWith("/requests") ? "page" : undefined} href="/requests" onClick={() => setOpen(false)}>Requests</Link>}
-        {status === "authenticated" && isAdmin && <Link aria-current={pathname.startsWith("/admin") ? "page" : undefined} href="/admin/dashboard" onClick={() => setOpen(false)}>Admin dashboard</Link>}
+        {showPublicSettings(status, isAdmin) && <Link aria-current={pathname.startsWith("/saved") ? "page" : undefined} href="/saved">Saved</Link>}
+        {showPublicSettings(status, isAdmin) && <Link aria-current={pathname.startsWith("/settings") ? "page" : undefined} href="/settings">Settings</Link>}
+        {status === "authenticated" && <Link aria-current={pathname.startsWith("/requests") ? "page" : undefined} href="/requests">Requests</Link>}
+        {status === "authenticated" && isAdmin && <Link aria-current={pathname.startsWith("/admin") ? "page" : undefined} href="/admin/dashboard">Admin dashboard</Link>}
         {status === "authenticated" && <button className="nav-sign-out" disabled={signingOut} onClick={() => void signOut()} type="button">{signingOut ? "Signing out…" : "Sign out"}</button>}
         {signOutError && <p role="alert">{signOutError}</p>}
       </nav>
