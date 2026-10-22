@@ -19,7 +19,7 @@
     "test:integration": "node --test --experimental-strip-types lib/m4/logo-upload.test.ts lib/phase3/phase3.test.ts lib/phase3/post-modes.test.ts lib/phase3/organizations.test.ts lib/direction-lock.test.ts lib/age-gate.test.ts lib/onboarding/roles.test.ts lib/safe-next.test.ts components/auth/auth-provider.test.mjs lib/search.test.ts lib/contact.test.ts lib/phase3/mock-recovery.test.ts lib/phase3/verification-queue.test.ts lib/phase3/directory.test.ts lib/phase3/directory-requests.test.ts lib/m4/api.test.ts lib/m4/directory-profile-form.test.ts lib/m4/directory-query-state.test.ts lib/m4/review-actions.test.ts lib/m4/admin-notification-detail.test.ts lib/m4/admin-ui-contract.test.ts lib/phase5/engagement.test.ts lib/phase6/admin.test.ts"
   },
   "dependencies": {
-    "next": "16.4.0",
+    "next": "16.4.2",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
@@ -28,7 +28,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.4.2",
     "typescript": "^5.9.0"
   },
   "overrides": {

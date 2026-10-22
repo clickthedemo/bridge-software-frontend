@@ -43,8 +43,11 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         if: always()
+        # Evidence upload must not fail the gate: a full account artifact quota (Oct 22) failed green test runs.
+        continue-on-error: true
         with:
           name: bridge-m4-browser-evidence
+          retention-days: 7
           path: |
             /tmp/bridge-m4-evidence
             /tmp/bridge-m4-test-results
