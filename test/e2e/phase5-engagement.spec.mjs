@@ -104,3 +104,46 @@ test("a signed-in member saves a profile and sees its updates", async ({ page },
   await noOverflow(page);
   await evidence(page, testInfo, "profile-save");
 });
+
+async function openMainNav(page, testInfo) {
+  if (testInfo.project.name === "mobile") await page.getByRole("button", { name: "Menu" }).click();
+  return page.getByRole("navigation", { name: "Main navigation" });
+}
+
+for (const [who, identity, savedVisible] of [
+  ["signed-out visitor", null, false],
+  ["platform admin", { ...me, user: { ...me.user, platformRoles: ["admin"] }, memberships: [] }, false],
+  ["signed-in member", me, true],
+]) {
+  test(`main nav shows Announcements to a ${who}${savedVisible ? " and Saved too" : " but not Saved"}`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem("bridge-age-confirmed-v1", "confirmed"));
+    await page.route("https://bridge-api.example.test/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/api/v1/auth/me") return identity ? route.fulfill({ json: identity }) : route.fulfill({ status: 401, json: { error: "UNAUTHENTICATED", message: "x" } });
+      if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
+      if (url.pathname === "/api/v1/announcements") return route.fulfill({ json: { announcements: [{ id: "a1", title: "Welcome to Bridge", body: "Hello", publishedAt: "2026-10-19T12:00:00Z", updatedAt: "2026-10-19T12:00:00Z" }], nextCursor: null } });
+      if (url.pathname === "/api/v1/saved-profiles") return route.fulfill({ json: { savedProfiles: [], pageInfo: { limit: 100, offset: 0, hasMore: false } } });
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND", message: "x" } });
+    });
+    await openPage(page, "/verified");
+    let nav = await openMainNav(page, testInfo);
+    if (identity) await expect(nav.getByRole("button", { name: "Sign out" })).toBeVisible();
+    else await expect(nav.getByRole("link", { name: "Sign in" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Saved", exact: true })).toHaveCount(savedVisible ? 1 : 0);
+    await nav.getByRole("link", { name: "Announcements" }).click();
+    await expect(page).toHaveURL(/\/announcements$/);
+    await expect(page.getByRole("heading", { name: "Welcome to Bridge" })).toBeVisible();
+    nav = await openMainNav(page, testInfo);
+    await expect(nav.getByRole("link", { name: "Announcements" })).toHaveAttribute("aria-current", "page");
+    await noOverflow(page);
+    if (!savedVisible) return;
+    await nav.getByRole("link", { name: "Saved", exact: true }).click();
+    await expect(page).toHaveURL(/\/saved$/);
+    await expect(page.getByRole("heading", { name: "Nothing saved yet" })).toBeVisible();
+    nav = await openMainNav(page, testInfo);
+    await expect(nav.getByRole("link", { name: "Saved", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(nav.getByRole("link", { name: "Announcements" })).not.toHaveAttribute("aria-current", "page");
+    await noOverflow(page);
+    await evidence(page, testInfo, "nav-saved");
+  });
+}
