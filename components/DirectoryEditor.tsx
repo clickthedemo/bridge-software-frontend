@@ -56,6 +56,7 @@ function OrganizationDirectoryEditor({ selectedOrganizationId, selectedMembershi
   const [revision, setRevision] = useState(0);
   const [missingSubmissionFields, setMissingSubmissionFields] = useState<string[]>([]);
   const [readinessLoaded, setReadinessLoaded] = useState(false);
+  const [submissionReady, setSubmissionReady] = useState(false);
   const [ein, setEin] = useState("");
   const [einLastFour, setEinLastFour] = useState("");
   const [privateDetailsKey, setPrivateDetailsKey] = useState("");
@@ -83,7 +84,7 @@ function OrganizationDirectoryEditor({ selectedOrganizationId, selectedMembershi
         const selectedBusiness = items.find((item) => item.id === value?.businessId) ?? items[0];
         setBusinessWebsite(selectedBusiness?.websiteUrl ?? "");
         setEmployeeCount(selectedBusiness?.employeeCount ? String(selectedBusiness.employeeCount) : "");
-        setMissingSubmissionFields(readiness?.missingFields ?? []); setReadinessLoaded(!!readiness);
+        setMissingSubmissionFields(readiness?.missingFields ?? []); setReadinessLoaded(!!readiness); setSubmissionReady(readiness?.ready === true);
         const businessType = directoryProfileBusinessType(selectedMembership);
         if (value) {
           setDraft({ businessId: value.businessId ?? "", slug: value.slug, displayName: value.displayName, summary: value.summary, story: value.story, businessType: value.businessType ?? businessType, categories: value.categories, city: value.city, state: value.state, region: value.region, publicEmail: value.publicContact.email, publicPhone: value.publicContact.phone, licenseType: value.license?.type ?? null, licenseNumber: value.license?.number ?? null, links: value.links });
@@ -139,7 +140,8 @@ function OrganizationDirectoryEditor({ selectedOrganizationId, selectedMembershi
   }
 
   async function refreshReadiness() {
-    try { const readiness = await m4Api.getProfileSubmissionReadiness(selectedOrganizationId); setMissingSubmissionFields(readiness?.missingFields ?? []); setReadinessLoaded(!!readiness); }
+    setReadinessLoaded(false); setSubmissionReady(false);
+    try { const readiness = await m4Api.getProfileSubmissionReadiness(selectedOrganizationId); setMissingSubmissionFields(readiness.missingFields); setReadinessLoaded(true); setSubmissionReady(readiness.ready); }
     catch { setReadinessLoaded(false); }
   }
 
@@ -178,7 +180,7 @@ function OrganizationDirectoryEditor({ selectedOrganizationId, selectedMembershi
     catch (cause) { setError(message(cause)); } finally { setBusy(""); }
   }
 
-  async function submit() { if (!window.confirm("Submit this profile for administrator review?")) return; setBusy("submit"); setError(""); try { setProfile(await m4Api.submitProfile(selectedOrganizationId)); setNotice("Profile submitted for review."); } catch (cause) { setError(message(cause)); } finally { setBusy(""); } }
+  async function submit() { if (busy || !readinessLoaded || !submissionReady || missingSubmissionFields.length > 0 || !window.confirm("Submit this profile for administrator review?")) return; setBusy("submit"); setError(""); try { setProfile(await m4Api.submitProfile(selectedOrganizationId)); setNotice("Profile submitted for review."); } catch (cause) { setError(message(cause)); } finally { setBusy(""); } }
   async function upload() { if (!editable || !logo) return; const validation = validateDirectoryLogo(logo); if (validation) { setError(validation); return; } setBusy("logo"); setError(""); setNotice(""); setUploadProgress(0); try { const updated = await m4Api.uploadLogo(selectedOrganizationId, logo, setUploadProgress); setProfile(updated); setLogo(null); setLogoPreviewName("Working revision logo"); setLogoLoadError(""); setUploadProgress(0); if (logoInput.current) logoInput.current.value = ""; setPreparingUpdate(false); setNotice("Logo uploaded to working revision. Your published logo is unchanged until this update is submitted and approved."); } catch (cause) { setError(message(cause)); } finally { setBusy(""); } }
   async function removeLogo() { if (!editable || !window.confirm("Remove this working profile logo?")) return; setBusy("logo"); setError(""); setNotice(""); try { setProfile(await m4Api.deleteLogo(selectedOrganizationId)); ++logoPreviewVersion.current; setLogo(null); setLogoPreview(""); setLogoPreviewName(""); setLogoLoadError(""); if (logoInput.current) logoInput.current.value = ""; setNotice("Logo removed."); } catch (cause) { setError(message(cause)); } finally { setBusy(""); } }
 
@@ -225,7 +227,13 @@ function OrganizationDirectoryEditor({ selectedOrganizationId, selectedMembershi
         <label>License number (optional)<input value={draft.licenseNumber ?? ""} onChange={(event) => field("licenseNumber", event.target.value || null)} /></label>
         <button className="button primary">{busy === "save" ? "Saving…" : "Save draft"}</button>
       </fieldset>
-      {canSubmit && profile && editable && <><button className="button secondary" disabled={!!busy || missingSubmissionFields.length > 0} onClick={() => void submit()} type="button">{busy === "submit" ? "Submitting…" : profile.status === "correction_requested" ? "Resubmit for review" : "Submit for review"}</button>{missingSubmissionFields.length > 0 && <p className="boundary-note">Complete before submission: {missingSubmissionFields.join(", ").replaceAll("_", " ")}.</p>}</>}{profile?.status === "approved" && <Link className="text-link" href={`/profile/${profile.slug}`}>View public profile</Link>}
+      {canSubmit && profile && editable && <>
+        <button className="button secondary" disabled={!!busy || !readinessLoaded || !submissionReady || missingSubmissionFields.length > 0} onClick={() => void submit()} type="button">{busy === "submit" ? "Submitting…" : profile.status === "correction_requested" ? "Resubmit for review" : "Submit for review"}</button>
+        {!readinessLoaded && <p className="boundary-note">Submission readiness is unavailable. Check again before submitting.</p>}
+        {readinessLoaded && !submissionReady && missingSubmissionFields.length === 0 && <p className="boundary-note">This profile is not ready for submission. Check again after completing your business details.</p>}
+        {missingSubmissionFields.length > 0 && <p className="boundary-note">Complete before submission: {missingSubmissionFields.join(", ").replaceAll("_", " ")}.</p>}
+        <button className="button secondary" disabled={!!busy} onClick={async () => { setBusy("readiness"); await refreshReadiness(); setBusy(""); }} type="button">{busy === "readiness" ? "Checking readiness…" : "Check submission readiness"}</button>
+      </>}{profile?.status === "approved" && <Link className="text-link" href={`/profile/${profile.slug}`}>View public profile</Link>}
     </form>}
     {!loading && !failedLoad && profile && <section className="content-card auth-form" aria-labelledby="profile-logo-heading"><h2 id="profile-logo-heading">Profile logo</h2><p className="form-hint">PNG, JPEG, or WebP · maximum 2 MiB.</p><div className="directory-logo-preview"><ProfileLogo logoUrl={logoPreview || profile.logoUrl} name={profile.displayName || "Organization"} size="detail" onLoadError={() => setLogoLoadError("The working logo preview could not be displayed. Try refreshing the page.")} /><div><strong>{logoPreview ? "Preview" : profile.logoUrl ? "Current published or working logo" : "No logo uploaded"}</strong><p className="form-hint">{logoPreview ? (logoPreviewName || "Working revision logo") : profile.logoUrl ? "The published logo stays visible while a replacement is reviewed." : "Your initials are shown as a placeholder."}</p></div></div>{logoLoadError && <p className="form-error" role="alert">{logoLoadError}</p>}{profile.status === "approved" && !preparingUpdate ? <div className="boundary-note"><p>Replacing this logo creates a working revision. The current published logo remains visible until administrator approval.</p><button className="button secondary" onClick={() => setPreparingUpdate(true)} type="button">Prepare logo replacement</button></div> : editable && <><label>Choose logo<input accept="image/png,image/jpeg,image/webp" disabled={!!busy} ref={logoInput} type="file" onChange={(event) => { const file = event.target.files?.[0] ?? null; ++logoPreviewVersion.current; setLogo(file); setLogoPreview(file ? URL.createObjectURL(file) : ""); setLogoPreviewName(file?.name ?? ""); setLogoLoadError(""); setError(file ? validateDirectoryLogo(file) ?? "" : ""); setNotice(""); }} /></label>{busy === "logo" && <div><progress aria-label="Logo upload progress" max={100} value={uploadProgress} /><p role="status">Uploading logo… {uploadProgress}%</p></div>}<div className="button-row"><button className="button primary" disabled={!logo || !!busy || !!validateDirectoryLogo(logo)} onClick={() => void upload()} type="button">{busy === "logo" ? "Uploading…" : profile.logoUrl ? "Replace logo" : "Upload logo"}</button>{profile.logoUrl && <button className="button secondary" disabled={!!busy} onClick={() => void removeLogo()} type="button">Remove logo</button>}</div>{profile.hasPublishedVersion && <p className="boundary-note">Logo changes are saved to a working revision and require submission and administrator approval. The existing published logo will remain public until then.</p>}</>}</section>}
   </div>;

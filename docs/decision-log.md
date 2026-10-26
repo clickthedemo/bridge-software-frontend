@@ -1,5 +1,9 @@
 # Bridge decision log
 
+## Submission readiness recovery — 2026-10-25
+
+Directory submission requires a valid readiness response with `ready: true` and no missing fields. An unavailable or malformed response keeps submission disabled, including after a successful draft, EIN, contact or address save. Owners and organization admins can check readiness again without repeating the write. This uses the existing Greencubes endpoint; backend authorization, verification decisions and real EIN-provider acceptance remain authoritative.
+
 ## Phase 6 reports and admin tools — 2026-10-22
 
 Report reasons default to spam, false or misleading claims, prohibited product or medical claim, harassment and other; the backend enum (bridge-software-backend `docs/phase-6-admin-moderation-api.md`) is the source and Tori can change the list with a forward migration. The reason has no preselected value, so a report always carries a reason the member chose. Only signed-in members with an active organization see the Report action, because `POST /flags` refuses everyone else. The admin dashboard shows only counts that need action plus published-content totals; the earlier static "Active roles", "Account status", "Portal access" and "Total users" cards were removed (Users stays one click away in the admin navigation).
