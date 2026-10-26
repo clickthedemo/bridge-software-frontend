@@ -45,6 +45,37 @@ async function editorRoute(route, url, current = profile) {
   return false;
 }
 const member = (id, name) => ({ id, userId: `${id}-user`, email: `${id}@example.test`, displayName: name, role: "member", status: "active" });
+
+for (const state of ["unavailable", "malformed", "not_ready"]) {
+  test(`submission stays disabled when readiness is ${state} and recovers after a check`, async ({ page }) => {
+    let recovered = false, submissions = 0;
+    await setup(page, async (route, url) => {
+      if (url.pathname.endsWith("/submission-readiness")) {
+        if (recovered) return route.fulfill({ json: { ready: true, missingFields: [] } });
+        if (state === "unavailable") return failure(route, "Readiness unavailable");
+        return route.fulfill({ json: state === "malformed" ? {} : { ready: false, missingFields: [] } });
+      }
+      if (url.pathname.endsWith("/directory-profile/submit")) {
+        submissions++;
+        return route.fulfill({ json: { profile: { ...profile, status: "pending_review" } } });
+      }
+      return editorRoute(route, url);
+    });
+    await openPage(page, "/my-profile");
+    const submit = page.getByRole("button", { name: "Submit for review", exact: true });
+    await expect(submit).toBeDisabled();
+    expect(submissions).toBe(0);
+    recovered = true;
+    await page.getByRole("button", { name: "Check submission readiness", exact: true }).click();
+    await expect(submit).toBeEnabled();
+    page.once("dialog", (dialog) => dialog.accept());
+    await submit.click();
+    await expect(page.getByText("Profile submitted for review.", { exact: true })).toBeVisible();
+    expect(submissions).toBe(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  });
+}
+
 async function organizationDefaults(route, url) {
   if (url.pathname === "/api/v1/organizations") return route.fulfill({ json: { organizations: [] } });
   if (url.pathname === "/api/v1/organization-invitations") return route.fulfill({ json: { invitations: [] } });
@@ -159,6 +190,8 @@ test("successful draft PUT remains saved when readiness GET fails", async ({ pag
   await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible(); await expect(alerts(page)).toHaveCount(0);
   expect(writes).toHaveLength(1); expect(writes[0].displayName).toBe("Saved brand name");
   await expect(page.getByText(/Status: status unavailable/).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit for review", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Check submission readiness", exact: true })).toBeEnabled();
 });
 
 const licence = (id) => ({ id, businessId, organizationId: orgA, licenseNumber: `TEST-${id}`, licenseType: "adult_use", issuingState: "PA", expiresOn: "2027-12-31", status: "pending", verifiedAt: null, reviewReason: null });

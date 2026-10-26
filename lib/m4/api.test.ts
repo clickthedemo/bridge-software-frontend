@@ -2,6 +2,59 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { M4ApiError, m4Api, findAdminProfile, mapAdminAccountChoice, validateAccountSettings } from "./api.ts";
 
+test("submission readiness rejects absent or malformed success payloads", { concurrency: false }, async () => {
+  const original = globalThis.fetch;
+  const previousBase = process.env.NEXT_PUBLIC_BRIDGE_API_BASE;
+  process.env.NEXT_PUBLIC_BRIDGE_API_BASE = "https://api.example.test";
+  try {
+    for (const payload of [null, {}, [], { ready: "true", missingFields: [] }, { ready: true }, { ready: true, missingFields: [null] }]) {
+      globalThis.fetch = async () => new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } });
+      await assert.rejects(() => m4Api.getProfileSubmissionReadiness("org-a"),
+        (error) => error instanceof M4ApiError && error.status === 502 && error.code === "INVALID_RESPONSE");
+    }
+    globalThis.fetch = async () => new Response(null, { status: 204 });
+    await assert.rejects(() => m4Api.getProfileSubmissionReadiness("org-a"), M4ApiError);
+  } finally {
+    globalThis.fetch = original;
+    if (previousBase === undefined) delete process.env.NEXT_PUBLIC_BRIDGE_API_BASE;
+    else process.env.NEXT_PUBLIC_BRIDGE_API_BASE = previousBase;
+  }
+});
+
+test("onboarding requests preserve organization scope, private payloads and cookie credentials", { concurrency: false }, async () => {
+  const original = globalThis.fetch;
+  const previousBase = process.env.NEXT_PUBLIC_BRIDGE_API_BASE;
+  process.env.NEXT_PUBLIC_BRIDGE_API_BASE = "https://api.example.test";
+  const calls: Array<{ path: string; method: string; credentials: RequestCredentials | undefined; body: unknown }> = [];
+  let readiness = { ready: false, missingFields: ["ein_verification"] };
+  globalThis.fetch = async (input, init) => {
+    calls.push({ path: new URL(String(input)).pathname, method: init?.method ?? "GET", credentials: init?.credentials, body: init?.body ? JSON.parse(String(init.body)) : null });
+    return new Response(JSON.stringify(readiness), { headers: { "content-type": "application/json" } });
+  };
+  try {
+    await m4Api.putBusinessEin("org/a", "business/b", "123456789");
+    await m4Api.putBusinessContact("org/a", "business/b", { email: " Ops@Example.test ", phone: " 555-010-2000 " });
+    const address = { addressLine1: "1 Example Way", addressLine2: null, city: "Pittsburgh", state: "PA", postalCode: "15222", country: "US" };
+    await m4Api.putPrimaryLocation("org/a", address);
+    assert.deepEqual(await m4Api.getProfileSubmissionReadiness("org/a"), readiness);
+    readiness = { ready: false, missingFields: [] };
+    assert.deepEqual(await m4Api.getProfileSubmissionReadiness("org/a"), readiness);
+    readiness = { ready: true, missingFields: [] };
+    assert.deepEqual(await m4Api.getProfileSubmissionReadiness("org/a"), readiness);
+    const base = "/api/v1/organizations/org%2Fa";
+    assert.deepEqual(calls, [
+      { path: `${base}/businesses/business%2Fb/ein`, method: "PUT", credentials: "include", body: { ein: "123456789" } },
+      { path: `${base}/businesses/business%2Fb/contact`, method: "PUT", credentials: "include", body: { email: "ops@example.test", phone: "555-010-2000" } },
+      { path: `${base}/primary-location`, method: "PUT", credentials: "include", body: address },
+      ...Array.from({ length: 3 }, () => ({ path: `${base}/directory-profile/submission-readiness`, method: "GET", credentials: "include", body: null })),
+    ]);
+  } finally {
+    globalThis.fetch = original;
+    if (previousBase === undefined) delete process.env.NEXT_PUBLIC_BRIDGE_API_BASE;
+    else process.env.NEXT_PUBLIC_BRIDGE_API_BASE = previousBase;
+  }
+});
+
 test("administrator choices map to the backend account fields", () => {
   assert.deepEqual(mapAdminAccountChoice("standard"), { accountType: "standard", platformRole: null });
   assert.deepEqual(mapAdminAccountChoice("sales_rep"), { accountType: "sales_rep", platformRole: null });
