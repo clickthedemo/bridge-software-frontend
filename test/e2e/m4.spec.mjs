@@ -37,6 +37,7 @@ async function setup(page, handler, role = "owner", accountType = "standard", pl
       return route.fulfill({ json: identity(role, accountType, platformRoles) });
     }
     if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
+    if (/^\/api\/v1\/directory\/profiles\/[^/]+\/action-context$/.test(url.pathname)) return route.fulfill({ json: { ownOrganization: false } });
     // Phase 5 profile widgets also read these; an empty, healthy answer keeps M4 profile journeys unchanged.
     if (url.pathname === "/api/v1/saved-profiles") return route.fulfill({ json: { savedProfiles: [], pageInfo: { limit: 100, offset: 0, hasMore: false } } });
     if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: [], nextCursor: null } });
@@ -71,7 +72,8 @@ for (const role of ["owner", "page_manager"]) {
     const errors = await setup(page, async (route, url) => {
       if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: business, organizationId: org1, legalName: "Example Brand LLC", dbaName: "Example Brand", status: "active" }] } });
       if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
-      if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
+      if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId: url.pathname.split("/").at(-3), einLastFour: null, status: "not_submitted", reviewNote: null } });
+    if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
       if (route.request().method() === "GET" && url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { businessId: business, email: null, phone: null, updatedAt: "2026-10-21T10:00:00Z" } } });
       if (route.request().method() === "GET" && url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
       if (url.pathname.endsWith("/directory-profile")) {
@@ -106,17 +108,19 @@ for (const role of ["owner", "page_manager"]) {
 test("owner can enter EIN, private contact and address that submission requires", async ({ page }, testInfo) => {
   const writes = [];
   let savedContact = null;
+  let savedEin = false;
   let savedLocation = null;
   let missing = ["private_email", "private_phone", "ein_verification", "business_address"];
   const errors = await setup(page, async (route, url) => {
     const method = route.request().method();
     if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: business, organizationId: org1, legalName: "Example Brand LLC", dbaName: "Example Brand", websiteUrl: "https://example.test", employeeCount: 12, status: "active" }] } });
     if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: missing.length === 0, missingFields: missing } });
+    if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId: url.pathname.split("/").at(-3), einLastFour: savedEin ? "6789" : null, status: savedEin ? "pending" : "not_submitted", reviewNote: null } });
     if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
     if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, status: "draft", hasPublishedVersion: false } } });
     if (method === "GET" && url.pathname.endsWith(`/businesses/${business}/contact`)) { const contact = url.pathname.includes(`/organizations/${org1}/`) ? savedContact : null; return route.fulfill({ json: { contact: { businessId: business, email: contact?.email ?? null, phone: contact?.phone ?? null, updatedAt: "2026-10-21T10:00:00Z" } } }); }
     if (method === "GET" && url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: url.pathname.includes(`/organizations/${org1}/`) ? savedLocation : null } });
-    if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/ein`)) { writes.push([url.pathname, route.request().postDataJSON()]); return route.fulfill({ json: { businessId: business, einLastFour: "6789" } }); }
+    if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/ein`)) { savedEin = true; writes.push([url.pathname, route.request().postDataJSON()]); return route.fulfill({ json: { businessId: business, einLastFour: "6789" } }); }
     if (method === "PUT" && url.pathname.endsWith(`/businesses/${business}/contact`)) { savedContact = route.request().postDataJSON(); writes.push([url.pathname, savedContact]); missing = missing.filter((item) => !item.startsWith("private_")); return route.fulfill({ json: { contact: { businessId: business, ...savedContact } } }); }
     if (method === "PUT" && url.pathname.endsWith(`/organizations/${org1}/primary-location`)) { const value = route.request().postDataJSON(); savedLocation = { id: "66666666-6666-4666-8666-666666666666", organizationId: org1, updatedAt: "2026-10-21T10:00:00Z", ...value }; writes.push([url.pathname, value]); missing = missing.filter((item) => item !== "business_address"); return route.fulfill({ json: { location: savedLocation } }); }
     return false;
@@ -290,6 +294,7 @@ test("delayed business A contact never replaces business B or its saved payload"
     if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [business, businessB].map((id) => ({ id, organizationId: org1, legalName: id === business ? "Business A" : "Business B", status: "active" })) } });
     if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, status: "draft", hasPublishedVersion: false } } });
     if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+    if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId: url.pathname.split("/").at(-3), einLastFour: null, status: "not_submitted", reviewNote: null } });
     if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
     if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
     if (url.pathname.endsWith("/contact")) {
@@ -390,6 +395,7 @@ test("business selection loads B protected fields before saving B", async ({ pag
     if (route.request().method() === "PATCH" && url.pathname.endsWith(`/businesses/${businessB}`)) { writes.push({ path: url.pathname, ...route.request().postDataJSON() }); return route.fulfill({ json: {} }); }
     if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, status: "draft" } } });
     if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+    if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId: url.pathname.split("/").at(-3), einLastFour: null, status: "not_submitted", reviewNote: null } });
     if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
     if (url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { email: null, phone: null } } });
     if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
@@ -417,6 +423,7 @@ test("choosing the fallback business on a fresh profile keeps contact saves enab
     if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: business, organizationId: org1, legalName: "A", websiteUrl: "https://a.example.test", employeeCount: 5 }] } });
     if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
     if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+    if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId: url.pathname.split("/").at(-3), einLastFour: null, status: "not_submitted", reviewNote: null } });
     if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
     if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
     if (url.pathname.endsWith("/contact")) {
@@ -444,6 +451,7 @@ test("organization change clears a selected logo and scoped business fields", as
     if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: business, organizationId, legalName: "Example", websiteUrl: organizationId === org1 ? "https://one.example.test" : "https://two.example.test", employeeCount: organizationId === org1 ? 5 : 12 }] } });
     if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, organizationId, status: "draft", logoUrl: null } } });
     if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+    if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId: url.pathname.split("/").at(-3), einLastFour: null, status: "not_submitted", reviewNote: null } });
     if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
     if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
     if (url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { email: organizationId === org1 ? "one@example.test" : "two@example.test", phone: "555-010-1000" } } });
@@ -546,7 +554,8 @@ for (const failure of ["initial", "organization switch"]) {
       }
       if (url.pathname.endsWith("/directory-profile")) return route.fulfill({ json: { profile: { ...profile, organizationId, displayName: organizationId === org1 ? "Org A profile" : "Org B profile", status: "draft" } } });
       if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
-      if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
+      if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId: url.pathname.split("/").at(-3), einLastFour: null, status: "not_submitted", reviewNote: null } });
+    if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
       if (url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { email: "owner@example.test", phone: "555-010-1000" } } });
       if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
       return false;

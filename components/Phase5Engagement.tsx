@@ -149,7 +149,7 @@ function ItemManager({ noun, load, create, update }: { noun: string; load: () =>
       <input aria-describedby={describedBy} id="engagement-title" maxLength={160} onChange={(event) => setTitle(event.target.value)} value={title} />
       <label htmlFor="engagement-body">Text</label>
       <textarea aria-describedby={describedBy} id="engagement-body" maxLength={5000} onChange={(event) => setBody(event.target.value)} rows={6} value={body} />
-      <p className="form-hint">Plain text. Publishing needs an approved, verified profile.</p>
+      <p className="form-hint">Plain text. {noun === "Announcement" ? "Authorized platform administrators can publish announcements without a business profile." : "Publishing needs an approved, verified profile."}</p>
       {error && <p className="form-error" id="engagement-error" role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       <div className="button-row"><button className="button primary" disabled={!!busy} type="submit">{busy === "new" ? "Saving…" : "Publish"}</button><button className="button secondary" disabled={!!busy} onClick={() => void submit(false)} type="button">Save draft</button></div>

@@ -35,7 +35,7 @@ function RequestCards({ page, organizationId, direct = false, onChanged }: { pag
   const [busy, setBusy] = useState(""); const [error, setError] = useState("");
   useNotificationFocus("requestId", page.items.map((item) => item.id), ".form-stack .content-card");
   async function update(id: string, nextStatus: ContactRequestStatus) { if (!organizationId && !direct) return; setBusy(id); setError(""); try { if (nextStatus !== "new") { if (direct) await m4Api.updateAssignedContactStatus(id, nextStatus); else await m4Api.updateContactStatus(organizationId!, id, nextStatus); } onChanged(); } catch (cause) { setError(errorText(cause)); } finally { setBusy(""); } }
-  return <>{error && <p className="form-error" role="alert">{error}</p>}{!page.items.length && <div className="empty-state"><h2>No contact requests</h2><p>New requests will appear here.</p></div>}{page.items.map((item) => <article className="content-card" key={item.id}><div className="card-topline"><h2>{item.subject || item.target?.displayName || item.firstName || "Contact request"}</h2><span className={`status-chip ${item.status === "closed" ? "verified" : "pending"}`}>{item.status}</span></div><p><strong>From:</strong> {item.firstName || "Not provided"}</p><p><strong>Contact preference:</strong> {item.contactPreference ? item.contactPreference[0].toUpperCase() + item.contactPreference.slice(1) : "Not provided"}</p>{item.message && <p>{item.message}</p>}{item.workEmail && <p className="muted">{item.workEmail} · {item.phoneNumber} · {item.yearsOfService} years</p>}<p className="form-hint">{new Date(item.createdAt).toLocaleString()} · Reference {item.id}</p>{(organizationId || direct) && transitions[item.status].length > 0 && <div className="button-row">{transitions[item.status].map((nextStatus) => <button className={nextStatus === "closed" ? "button secondary" : "button primary"} disabled={!!busy} key={nextStatus} onClick={() => void update(item.id, nextStatus)} type="button">Mark {nextStatus}</button>)}</div>}</article>)}</>;
+  return <>{error && <p className="form-error" role="alert">{error}</p>}{!page.items.length && <div className="empty-state"><h2>No contact requests</h2><p>New requests will appear here.</p></div>}{page.items.map((item) => <article className="content-card" key={item.id}><div className="card-topline"><h2>{item.subject || item.target?.displayName || item.firstName || "Contact request"}</h2><span className={`status-chip ${item.status === "closed" ? "verified" : "pending"}`}>{item.status}</span></div>{item.firstName !== undefined && <p><strong>From:</strong> {item.firstName || "Not provided"}</p>}{item.contactPreference !== undefined && <p><strong>Contact preference:</strong> {item.contactPreference[0].toUpperCase() + item.contactPreference.slice(1)}</p>}{item.message && <p>{item.message}</p>}{item.workEmail && <p className="muted">{item.workEmail} · {item.phoneNumber} · {item.yearsOfService} years</p>}<p className="form-hint">{new Date(item.createdAt).toLocaleString()} · Reference {item.id}</p>{(organizationId || direct) && transitions[item.status].length > 0 && <div className="button-row">{transitions[item.status].map((nextStatus) => <button className={nextStatus === "closed" ? "button secondary" : "button primary"} disabled={!!busy} key={nextStatus} onClick={() => void update(item.id, nextStatus)} type="button">Mark {nextStatus}</button>)}</div>}</article>)}</>;
 }
 
 export function ContactRequestInbox() {
@@ -48,16 +48,34 @@ export function ContactRequestInbox() {
   const [offset, setOffset] = useState(0), [revision, setRevision] = useState(0);
   const selectedOrganizationId = organizations.some((item) => item.organizationId === organizationId) ? organizationId : organizations[0]?.organizationId || "";
   const retry = () => setRevision((value) => value + 1);
-  if (!targetId && !organizations.length) return <div className="empty-state"><h2>No accessible inbox</h2><p>Organization owners and admins can view their inbox. Assigned sales representatives can open only requests routed to them.</p></div>;
+  if (!targetId && !organizations.length) {
+    return (
+      <div className="form-stack">
+        <nav className="button-row" aria-label="Contact request navigation">
+          <Link className="button secondary" href="/requests/sent">
+            Sent requests
+          </Link>
+        </nav>
+
+        <div className="empty-state">
+          <h2>No accessible inbox</h2>
+          <p>
+            Organization owners and admins can view their inbox.
+            Assigned sales representatives can open only requests routed to them.
+          </p>
+        </div>
+      </div>
+    );
+  }
   return <div className="form-stack">{!targetId && <div className="feed-toolbar"><label htmlFor="inbox-organization">Organization</label><select id="inbox-organization" value={selectedOrganizationId} onChange={(event) => { setOrganizationId(event.target.value); setOffset(0); setShowRouting(false); }}>{organizations.map((item) => <option key={item.organizationId} value={item.organizationId}>{item.organizationName}</option>)}</select><label htmlFor="inbox-status">Status</label><select id="inbox-status" value={filter} onChange={(event) => { setFilter(event.target.value as ContactRequestStatus | ""); setOffset(0); }}><option value="">All statuses</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select><Link className="button secondary" href="/requests/sent">Sent requests</Link></div>}
-    {!targetId && selectedOrganizationId && <><button className="button secondary" type="button" aria-expanded={showRouting} onClick={() => setShowRouting((value) => !value)}>Manage contact routing</button>{showRouting && <ContactRoutingSettings key={selectedOrganizationId} organizationId={selectedOrganizationId}/>}</>}
-    <InboxRequests key={JSON.stringify([targetId, selectedOrganizationId, filter, offset, revision])} targetId={targetId} organizationId={selectedOrganizationId} filter={filter} offset={offset} onRetry={retry} onOffset={setOffset}/>
+    {!targetId && selectedOrganizationId && <><button className="button secondary" type="button" aria-expanded={showRouting} onClick={() => setShowRouting((value) => !value)}>Manage contact routing</button>{showRouting && <ContactRoutingSettings key={selectedOrganizationId} organizationId={selectedOrganizationId} />}</>}
+    <InboxRequests key={JSON.stringify([targetId, selectedOrganizationId, filter, offset, revision])} targetId={targetId} organizationId={selectedOrganizationId} filter={filter} offset={offset} onRetry={retry} onOffset={setOffset} />
   </div>;
 }
 
 function ContactRoutingSettings({ organizationId }: { organizationId: string }) {
   const [revision, setRevision] = useState(0);
-  return <ContactRoutingForm key={`${organizationId}:${revision}`} organizationId={organizationId} onRetry={() => setRevision((value) => value + 1)}/>;
+  return <ContactRoutingForm key={`${organizationId}:${revision}`} organizationId={organizationId} onRetry={() => setRevision((value) => value + 1)} />;
 }
 
 function ContactRoutingForm({ organizationId, onRetry }: { organizationId: string; onRetry(): void }) {
@@ -112,12 +130,12 @@ function InboxRequests({ targetId, organizationId, filter, offset, onRetry, onOf
     request.then((value) => { if (active) setPage(value); }).catch((cause) => { if (active) { setPage(null); setError(errorText(cause)); } });
     return () => { active = false; };
   }, [targetId, organizationId, filter, offset]);
-  return <>{error && <div><p className="form-error" role="alert">{error}</p><button className="button secondary" type="button" onClick={onRetry}>Try again</button></div>}{!page && !error && <p role="status">{targetId ? "Loading contact request…" : "Loading contact requests…"}</p>}{page && <><RequestCards direct={!!targetId} {...(targetId ? {} : { organizationId })} page={page} onChanged={onRetry}/>{!targetId && <Pager page={page} setOffset={onOffset}/>}</>}</>;
+  return <>{error && <div><p className="form-error" role="alert">{error}</p><button className="button secondary" type="button" onClick={onRetry}>Try again</button></div>}{!page && !error && <p role="status">{targetId ? "Loading contact request…" : "Loading contact requests…"}</p>}{page && <><RequestCards direct={!!targetId} {...(targetId ? {} : { organizationId })} page={page} onChanged={onRetry} />{!targetId && <Pager page={page} setOffset={onOffset} />}</>}</>;
 }
 
 export function SentContactRequests() {
   const targetId = useSearchParams().get("requestId");
-  return <SentRequestList key={targetId ?? "sent"} targetId={targetId}/>;
+  return <SentRequestList key={targetId ?? "sent"} targetId={targetId} />;
 }
 
 function SentRequestList({ targetId }: { targetId: string | null }) {
@@ -144,7 +162,7 @@ function SentRequestList({ targetId }: { targetId: string | null }) {
     return () => { active = false; };
   }, [targetId, offset, revision]);
   function reload(nextOffset = offset) { setPage(null); setError(""); setOffset(nextOffset); setRevision((value) => value + 1); }
-  return <>{error && <div><p className="form-error" role="alert">{error}</p><button className="button secondary" type="button" onClick={() => reload()}>Try again</button></div>}{!page && !error && <p role="status">Loading sent requests…</p>}{page && <><RequestCards page={page} onChanged={() => undefined}/><Pager page={page} setOffset={reload}/></>}</>;
+  return <>{error && <div><p className="form-error" role="alert">{error}</p><button className="button secondary" type="button" onClick={() => reload()}>Try again</button></div>}{!page && !error && <p role="status">Loading sent requests…</p>}{page && <><RequestCards page={page} onChanged={() => undefined} /><Pager page={page} setOffset={reload} /></>}</>;
 }
 
 function Pager({ page, setOffset }: { page: OffsetPage<unknown>; setOffset(value: number): void }) { return <nav aria-label="Request pages" className="button-row"><button className="button secondary" disabled={page.offset === 0} onClick={() => setOffset(Math.max(0, page.offset - page.limit))} type="button">Previous</button><button className="button secondary" disabled={!page.hasMore} onClick={() => setOffset(page.offset + page.limit)} type="button">Next</button></nav>; }

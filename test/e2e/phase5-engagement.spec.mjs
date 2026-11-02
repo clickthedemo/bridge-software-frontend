@@ -86,6 +86,7 @@ test("a signed-in member saves a profile and sees its updates", async ({ page },
   const saves = [];
   await setup(page, async (route, url) => {
     const method = route.request().method();
+    if (url.pathname === "/api/v1/directory/profiles/fixture-a/action-context") return route.fulfill({ json: { ownOrganization: false } });
     if (url.pathname === "/api/v1/directory/profiles/fixture-a") return route.fulfill({ json: { profile: { slug: "fixture-a", displayName: "Fixture A", summary: "Brand", categories: [], links: [], publicContact: { email: null, phone: null }, verified: true } } });
     if (url.pathname === "/api/v1/saved-profiles" && method === "GET") return route.fulfill({ json: { savedProfiles: [], pageInfo: { limit: 100, offset: 0, hasMore: false } } });
     if (url.pathname === "/api/v1/saved-profiles/fixture-a") { saves.push(method); return route.fulfill({ json: { slug: "fixture-a", saved: method === "PUT" } }); }

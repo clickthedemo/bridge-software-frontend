@@ -100,3 +100,15 @@ test("unmount prevents pending session completion", async () => {
   await flush();
   assert.equal(h.render().status, "loading");
 });
+
+test("membership refresh publishes new organization context without a full reload and ignores late responses after logout", async () => {
+  let reads = 0;
+  const pending = deferred();
+  const h = harness({ getCurrentUser: () => ++reads === 1 ? Promise.resolve(identity) : pending.promise, logout: async () => {} });
+  await flush();
+  const refreshing = h.render().refreshMemberships();
+  assert.equal(h.render().status, "authenticated");
+  await h.render().logout(); pending.resolve({ ...identity, memberships: [{ organizationId: "new-org" }] }); await refreshing;
+  assert.equal(h.render().status, "unauthenticated");
+  assert.equal(h.render().memberships.length, 0);
+});

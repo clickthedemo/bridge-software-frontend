@@ -11,6 +11,7 @@ export type VerificationQueueRow = {
   checkMode: "mock" | "live" | null;
   lastCheckedAt: string | null;
   safeReason: string | null;
+  responseCode: string | null;
 };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -36,6 +37,6 @@ export function normalizeVerificationQueue(payload: unknown): VerificationQueueR
     const id = verificationItemId as string;
     if (ids.has(id)) throw invalid();
     ids.add(id);
-    return { id, caseId: verificationCaseId as string, organization: organizationName as string, businessName: businessLegalName as string, itemType: itemType as string, status: status as string, submittedAt: caseSubmittedAt as string | null, updatedAt: itemUpdatedAt, checkState: einCheckState as VerificationQueueRow["checkState"], checkMode: einCheckMode as VerificationQueueRow["checkMode"], lastCheckedAt: einLastCheckedAt as string | null, safeReason: einSafeReason as string | null };
+    return { id, caseId: verificationCaseId as string, organization: organizationName as string, businessName: businessLegalName as string, itemType: itemType as string, status: status as string, submittedAt: caseSubmittedAt as string | null, updatedAt: itemUpdatedAt, checkState: einCheckState as VerificationQueueRow["checkState"], checkMode: einCheckMode as VerificationQueueRow["checkMode"], lastCheckedAt: einLastCheckedAt as string | null, safeReason: einSafeReason as string | null, responseCode: typeof item.einResponseCode === "string" ? item.einResponseCode : null };
   });
 }

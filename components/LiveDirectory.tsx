@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ContactRequestForm } from "@/components/M4ContactRequests";
@@ -85,9 +86,34 @@ export function LiveDirectory() {
 }
 
 export function LiveDirectoryDetail({ identifier }: { identifier: string }) {
+  const { status: authStatus, memberships, user, refresh: refreshAuth } = useAuth();
   const searchParams = useSearchParams(); const from = searchParams.get("from"); const backHref = from ? `/directory?${from}` : "/directory";
   const [profile, setProfile] = useState<DirectoryProfile | null>(null); const [error, setError] = useState(""); const [revision, setRevision] = useState(0);
   useEffect(() => { let active = true; m4Api.getPublicProfile(identifier).then((value) => { if (active) { setProfile(value); setError(""); } }).catch((cause) => { if (active) setError(errorText(cause)); }); return () => { active = false; }; }, [identifier, revision]);
+  const [actionContext, setActionContext] = useState<{ scope: string; ownOrganization?: boolean; failed?: boolean } | null>(null);
+  const [actionRevision, setActionRevision] = useState(0);
+  const actionScope = user ? user.id + ":" + identifier + ":" + memberships.filter((m) => m.status === "active").map((m) => m.organizationId).sort().join(",") : "";
+  const actionRequestScope = `${actionScope}:${actionRevision}`;
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    let active = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    m4Api.getPublicProfileActionContext(identifier, controller.signal).then((context) => {
+      if (active) setActionContext({ scope: actionRequestScope, ownOrganization: context.ownOrganization });
+    }).catch(() => { if (active) setActionContext({ scope: actionRequestScope, failed: true }); })
+      .finally(() => window.clearTimeout(timeout));
+    return () => { active = false; window.clearTimeout(timeout); controller.abort(); };
+  }, [authStatus, actionRequestScope, identifier]);
+  const currentActionContext = actionContext?.scope === actionRequestScope ? actionContext : null;
+  const showActions = authStatus === "unauthenticated" || (authStatus === "authenticated" && currentActionContext?.ownOrganization === false);
+  const actionFeedback = authStatus === "unavailable"
+    ? <div><p role="alert">Your sign-in status could not be checked. Profile actions are temporarily unavailable.</p><button className="button secondary" type="button" onClick={() => void refreshAuth()}>Retry sign-in status</button></div>
+    : authStatus === "loading" || (authStatus === "authenticated" && !currentActionContext)
+      ? <p role="status">Checking profile actions…</p>
+      : currentActionContext?.failed
+        ? <div><p role="alert">Profile actions could not be checked. Please try again.</p><button className="button secondary" type="button" onClick={() => setActionRevision((value) => value + 1)}>Retry profile actions</button></div>
+        : null;
   const website = profile?.links.find((link) => link.type === "website");
-  return <section className="page shell profile-page"><Link className="text-link back-link" href={backHref}>← Back to Directory</Link>{error ? <div className="empty-state"><h1>Profile unavailable</h1><p role="alert">{error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div> : !profile ? <p role="status">Loading profile…</p> : <article className="content-card public-profile-card"><div className="public-profile-heading"><ProfileLogo logoUrl={profile.logoUrl} name={profile.displayName} size="detail" /><Identity heading="h1" profile={{ ...profile, logoUrl: null }} /></div>{profile.story && <p>{profile.story}</p>}{profile.categories.length > 0 && <p className="tag-row">{profile.categories.map((category) => <span className="tag" key={category}>{category}</span>)}</p>}<div className="public-profile-details">{profile.city && <p><strong>Location</strong><span>{[profile.city, profile.state, profile.region].filter(Boolean).join(" · ")}</span></p>}{profile.publicContact.email && <p><strong>Email</strong><a className="text-link" href={`mailto:${profile.publicContact.email}`}>{profile.publicContact.email}</a></p>}{profile.publicContact.phone && <p><strong>Phone</strong><a className="text-link" href={`tel:${profile.publicContact.phone}`}>{profile.publicContact.phone}</a></p>}{website && <p><strong>Website</strong><a className="text-link" href={website.url} rel="noreferrer" target="_blank">Visit website</a></p>}</div><section id="contact-request"><ContactRequestForm profileName={profile.displayName} slug={profile.slug} /></section><SaveProfileButton slug={profile.slug} /><ReportButton target={{ type: "profile", slug: profile.slug, label: profile.displayName }} /></article>}{profile && !error && <ProfilePosts slug={profile.slug} />}</section>;
+  return <section className="page shell profile-page"><Link className="text-link back-link" href={backHref}>← Back to Directory</Link>{error ? <div className="empty-state"><h1>Profile unavailable</h1><p role="alert">{error}</p><button className="button secondary" onClick={() => setRevision((value) => value + 1)} type="button">Try again</button></div> : !profile ? <p role="status">Loading profile…</p> : <article className="content-card public-profile-card"><div className="public-profile-heading"><ProfileLogo logoUrl={profile.logoUrl} name={profile.displayName} size="detail" /><Identity heading="h1" profile={{ ...profile, logoUrl: null }} /></div>{profile.story && <p>{profile.story}</p>}{profile.categories.length > 0 && <p className="tag-row">{profile.categories.map((category) => <span className="tag" key={category}>{category}</span>)}</p>}<div className="public-profile-details">{profile.city && <p><strong>Location</strong><span>{[profile.city, profile.state, profile.region].filter(Boolean).join(" · ")}</span></p>}{profile.publicContact.email && <p><strong>Email</strong><a className="text-link" href={`mailto:${profile.publicContact.email}`}>{profile.publicContact.email}</a></p>}{profile.publicContact.phone && <p><strong>Phone</strong><a className="text-link" href={`tel:${profile.publicContact.phone}`}>{profile.publicContact.phone}</a></p>}{website && <p><strong>Website</strong><a className="text-link" href={website.url} rel="noreferrer" target="_blank">Visit website</a></p>}</div>{actionFeedback}{showActions && <><section id="contact-request"><ContactRequestForm profileName={profile.displayName} slug={profile.slug} /></section><SaveProfileButton slug={profile.slug} /><ReportButton target={{ type: "profile", slug: profile.slug, label: profile.displayName }} /></>}</article>}{profile && !error && <ProfilePosts slug={profile.slug} />}</section>;
 }

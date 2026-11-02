@@ -206,3 +206,29 @@ test("contact routing uses scoped candidates and existing GET/PUT without leakin
     await assert.rejects(() => m4Api.contactRoutingCandidates("org-a"), (error) => error instanceof M4ApiError && error.status === 502);
   } finally { globalThis.fetch = original; delete process.env.NEXT_PUBLIC_BRIDGE_API_BASE; }
 });
+
+test("EIN status rejects malformed or cross-business responses rather than implying verification", { concurrency: false }, async () => {
+  const original = globalThis.fetch, previous = process.env.NEXT_PUBLIC_BRIDGE_API_BASE;
+  process.env.NEXT_PUBLIC_BRIDGE_API_BASE = "https://api.example.test";
+  try {
+    for (const payload of [null, {}, { businessId: "another", einLastFour: "6789", status: "verified", reviewNote: null }, { businessId: "business", einLastFour: "6789", status: "unknown", reviewNote: null }]) {
+      globalThis.fetch = async () => new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } });
+      await assert.rejects(() => m4Api.getBusinessEinStatus("org", "business"), M4ApiError);
+    }
+  } finally { globalThis.fetch = original; if (previous === undefined) delete process.env.NEXT_PUBLIC_BRIDGE_API_BASE; else process.env.NEXT_PUBLIC_BRIDGE_API_BASE = previous; }
+});
+
+test("profile action context rejects malformed ownership responses", { concurrency: false }, async () => {
+  const original = globalThis.fetch, previous = process.env.NEXT_PUBLIC_BRIDGE_API_BASE;
+  process.env.NEXT_PUBLIC_BRIDGE_API_BASE = "https://api.example.test";
+  try {
+    for (const payload of [null, {}, { ownOrganization: "false" }]) {
+      globalThis.fetch = async () => new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } });
+      await assert.rejects(() => m4Api.getPublicProfileActionContext("evergreen"), M4ApiError);
+    }
+    for (const ownOrganization of [true, false]) {
+      globalThis.fetch = async () => new Response(JSON.stringify({ ownOrganization }), { headers: { "content-type": "application/json" } });
+      assert.deepEqual(await m4Api.getPublicProfileActionContext("evergreen"), { ownOrganization });
+    }
+  } finally { globalThis.fetch = original; if (previous === undefined) delete process.env.NEXT_PUBLIC_BRIDGE_API_BASE; else process.env.NEXT_PUBLIC_BRIDGE_API_BASE = previous; }
+});

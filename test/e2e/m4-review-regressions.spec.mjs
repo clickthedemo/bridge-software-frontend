@@ -14,14 +14,14 @@ const failure = (route, message) => route.fulfill({ status: 500, json: { error: 
 function identity(role, admin) {
   return { user: { id: "11111111-1111-4111-8111-111111111111", email: "owner@example.test", accountType: "standard", platformRoles: admin ? ["admin"] : [], profile: { displayName: "Example Owner", phone: null } }, memberships: [orgA, orgB].map((organizationId, index) => ({ organizationId, organizationName: index ? "Second organization" : "First organization", organizationType: "brand", role, status: "active" })) };
 }
-async function setup(page, handler, { role = "owner", admin = false } = {}) {
+async function setup(page, handler, { role = "owner", admin = false, getIdentity = () => identity(role, admin), notifications = [] } = {}) {
   const errors = []; pageFailures.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => { localStorage.setItem("bridge-age-confirmed-v1", "confirmed"); });
   await page.route("https://bridge-api.example.test/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/v1/auth/me") return route.fulfill({ json: identity(role, admin) });
-    if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications: [], pageInfo: { limit: 50, offset: 0, hasMore: false } } });
+    if (url.pathname === "/api/v1/auth/me") return route.fulfill({ json: await getIdentity() });
+    if (url.pathname === "/api/v1/notifications") return route.fulfill({ json: { notifications, pageInfo: { limit: 50, offset: 0, hasMore: false } } });
     if (await handler(route, url) !== false) return;
     errors.push(`Unexpected fixture route: ${route.request().method()} ${url.pathname}`);
     return route.fulfill({ status: 404, json: { error: "NOT_FOUND", message: "Unexpected fixture route" } });
@@ -38,6 +38,7 @@ test.afterEach(async ({ page }) => { expect(pageFailures.get(page) ?? []).toEqua
 async function editorRoute(route, url, current = profile) {
   if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [{ id: businessId, organizationId: orgA, legalName: "Example Brand LLC", websiteUrl: "https://example.test", employeeCount: 12, status: "active" }] } });
   if (url.pathname.endsWith("/submission-readiness")) return route.fulfill({ json: { ready: true, missingFields: [] } });
+  if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId, einLastFour: null, status: "not_submitted", reviewNote: null } });
   if (url.pathname.endsWith("/license")) return route.fulfill({ json: { license: null } });
   if (url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { businessId, email: null, phone: null, updatedAt: stamp } } });
   if (url.pathname.endsWith("/primary-location")) return route.fulfill({ json: { location: null } });
@@ -189,7 +190,8 @@ test("successful draft PUT remains saved when readiness GET fails", async ({ pag
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible(); await expect(alerts(page)).toHaveCount(0);
   expect(writes).toHaveLength(1); expect(writes[0].displayName).toBe("Saved brand name");
-  await expect(page.getByText(/Status: status unavailable/).first()).toBeVisible();
+  await expect(page.getByText(/Submission readiness is unavailable/)).toBeVisible();
+  await expect(page.getByText(/Status: EIN not submitted/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit for review", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Check submission readiness", exact: true })).toBeEnabled();
 });
@@ -298,3 +300,328 @@ test("verification deep link refocuses after filter reload with identical row ID
   await expect(row).toHaveCount(0); release.resolve();
   await expect(row).toBeFocused(); await expect(row).toHaveClass(/notification-focus/);
 });
+
+for (const outcome of ["cancel", "success", "failure"]) {
+  test(`verified EIN replacement ${outcome} requires accessible confirmation before any write`, async ({ page }) => {
+    let status = "verified", writes = 0;
+    await setup(page, (route, url) => {
+      if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId, einLastFour: status === "pending" ? "4321" : "6789", status, reviewNote: null } });
+      if (url.pathname.endsWith("/ein") && route.request().method() === "PUT") {
+        writes++;
+        if (outcome === "failure") return failure(route, "EIN save failed");
+        status = "pending";
+        return route.fulfill({ json: { businessId, einLastFour: "4321" } });
+      }
+      return editorRoute(route, url, null);
+    });
+    await openPage(page, "/my-profile");
+    await expect(page.getByText(/Status: verified by Bridge/)).toBeVisible();
+    await page.getByLabel("EIN (required)", { exact: true }).fill("987654321");
+    await page.getByRole("button", { name: "Save EIN", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Replace verified EIN?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    expect(writes).toBe(0);
+    await expect(dialog).toContainText("will require verification again");
+    if (outcome === "cancel") {
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).toHaveCount(0); expect(writes).toBe(0);
+      await expect(page.getByText(/Status: verified by Bridge/)).toBeVisible();
+    } else {
+      await dialog.getByRole("button", { name: "Save and request verification", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      if (outcome === "failure") {
+        await expect(alerts(page)).toHaveText("EIN save failed");
+        await expect(page.getByText(/Status: verified by Bridge/)).toBeVisible();
+        await expect(page.getByLabel("EIN (required)", { exact: true })).toHaveValue("987654321");
+      } else {
+        await expect(page.getByText(/Status: EIN ending 4321 saved, waiting for Bridge to verify/)).toBeVisible();
+        await expect(page.getByLabel("EIN (required)", { exact: true })).toHaveValue("");
+        await expect(page.getByText(/Status: verified by Bridge/)).toHaveCount(0);
+      }
+      expect(writes).toBe(1);
+    }
+  });
+}
+
+test("pending EIN and protected contact/address status do not depend on Directory readiness", async ({ page }) => {
+  await setup(page, (route, url) => {
+    if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId, einLastFour: "6789", status: "pending", reviewNote: null } });
+    if (url.pathname.endsWith("/submission-readiness")) return failure(route, "No Directory draft");
+    if (url.pathname.endsWith("/contact")) return route.fulfill({ json: { contact: { businessId, email: "ops@example.test", phone: "555-010-2000" } } });
+    return editorRoute(route, url, null);
+  });
+  await openPage(page, "/my-profile");
+  await expect(page.getByText(/Status: EIN ending 6789 saved, waiting for Bridge to verify/)).toBeVisible();
+  await expect(page.locator("form").filter({ has: page.getByRole("heading", { name: "Private business contact", exact: true }) })).toContainText("Status: saved");
+  await expect(page.locator("form").filter({ has: page.getByRole("heading", { name: "Business address", exact: true }) })).toContainText("Status: not provided");
+});
+
+for (const role of ["page_manager", "member", "reviewer"]) {
+  test(`${role} cannot read or replace protected EIN`, async ({ page }) => {
+    const protectedReads = [];
+    await setup(page, (route, url) => {
+      if (url.pathname.endsWith("/ein/status") || url.pathname.endsWith("/ein")) { protectedReads.push(url.pathname); return route.fulfill({ status: 403, json: { error: "FORBIDDEN" } }); }
+      return editorRoute(route, url);
+    }, { role });
+    await openPage(page, "/my-profile");
+    await expect(page.getByRole("button", { name: "Save EIN", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(protectedReads).toEqual([]);
+  });
+}
+
+test("organization context selects only active authorized memberships", async ({ page }) => {
+  const reads = [];
+  await setup(page, (route, url) => { reads.push(url.pathname); return editorRoute(route, url, null); });
+  await openPage(page, `/my-profile?organizationId=${orgB}`);
+  await expect(page.getByRole("combobox", { name: "Organization (required)", exact: true })).toHaveValue(orgB);
+  expect(reads.filter((p) => p.includes(orgA))).toEqual([]);
+  reads.length = 0;
+  await openPage(page, "/my-profile?organizationId=unrelated");
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText("The requested organization is unavailable or you no longer have access.");
+  expect(reads).toEqual([]);
+});
+
+test("late EIN response cannot change another business or open a stale confirmation", async ({ page }) => {
+  const businessB = "66666666-6666-4666-8666-666666666666", started = deferred(), release = deferred();
+  await setup(page, async (route, url) => {
+    if (url.pathname.endsWith("/businesses")) return route.fulfill({ json: { businesses: [businessId, businessB].map((id) => ({ id, organizationId: orgA, legalName: id === businessId ? "Business A" : "Business B", status: "active" })) } });
+    if (url.pathname.endsWith("/ein/status")) {
+      const isA = url.pathname.includes(businessId);
+      if (isA) { started.resolve(); await release.promise; }
+      return route.fulfill({ json: { businessId: isA ? businessId : businessB, einLastFour: isA ? "6789" : null, status: isA ? "verified" : "not_submitted", reviewNote: null } });
+    }
+    return editorRoute(route, url);
+  });
+  await openPage(page, "/my-profile"); await started.promise;
+  await page.getByRole("combobox", { name: "Business (required)", exact: true }).selectOption(businessB);
+  await expect(page.getByText(/Status: EIN not submitted/)).toBeVisible();
+  const response = page.waitForResponse((r) => r.url().includes(`${businessId}/ein/status`));
+  release.resolve(); await (await response).finished(); await painted(page);
+  await expect(page.getByText(/Status: EIN not submitted/)).toBeVisible();
+  await expect(page.getByText(/Status: verified by Bridge/)).toHaveCount(0);
+});
+
+test("pending provider match retains explicit Approve while verified match uses accurate Bridge status", async ({ page }) => {
+  await setup(page, (route, url) => {
+    if (url.pathname.endsWith("/business-licenses")) return route.fulfill({ json: { licenses: [{ ...licence("names"), businessName: "Named business", organizationName: "Named organization" }] } });
+    if (url.pathname.endsWith("/verification-queue")) return route.fulfill({ json: { entries: [
+      { ...verification, einCheckState: "match", einCheckMode: "live", einResponseCode: "7", einLastCheckedAt: stamp, einSafeReason: "The provider reports that the legal name and EIN match IRS business records. Administrator approval is still required." },
+      { ...verification, verificationItemId: "verified-item", status: "verified", einCheckState: "match", einCheckMode: "mock", einResponseCode: "0", einLastCheckedAt: stamp, einSafeReason: "The provider reports that the legal name and EIN match. Administrator approval is still required." }
+    ] } });
+    return false;
+  }, { admin: true });
+  await openPage(page, "/admin/verification");
+  await expect(page.getByRole("main")).toHaveCount(1);
+  const pending = page.locator("#verification-item-focus"), verified = page.locator("#verification-verified-item");
+  await expect(pending.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  await expect(pending).toContainText("Provider response code: 7"); await expect(pending).toContainText("Live lookup");
+  await expect(verified.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
+  await expect(verified).toContainText("Bridge has approved this business EIN.");
+  await expect(verified).not.toContainText("approval is still required");
+  await expect(page.locator("#license-names").getByRole("heading", { name: "Named business" })).toBeVisible();
+  await expect(page.locator("#license-names")).toContainText("Named organization");
+});
+
+test("manual review shows provider explanation and sends a meaningful correction note through the existing contract", async ({ page }) => {
+  const writes = [];
+  await setup(page, (route, url) => {
+    if (url.pathname.endsWith("/business-licenses")) return route.fulfill({ json: { licenses: [] } });
+    if (url.pathname.endsWith("/verification-queue")) return route.fulfill({ json: { entries: [{ ...verification, einCheckState: "manual_review", einResponseCode: "6", einCheckMode: "mock", einLastCheckedAt: stamp, einSafeReason: "Manual review is required until the provider confirms this code is acceptable for business EIN verification." }] } });
+    if (url.pathname.endsWith("/review")) { writes.push(route.request().postDataJSON()); return route.fulfill({ json: {} }); }
+    return false;
+  }, { admin: true });
+  await openPage(page, "/admin/verification");
+  const row = page.locator("#verification-item-focus");
+  await expect(row).toContainText("Provider response code: 6");
+  await expect(row.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
+  page.once("dialog", (d) => d.accept("short"));
+  await row.getByRole("button", { name: "Request correction", exact: true }).click();
+  await expect(alerts(page)).toHaveText("Enter a meaningful review note of at least 10 characters."); expect(writes).toEqual([]);
+  page.once("dialog", (d) => d.accept("Please correct the registered legal name."));
+  await row.getByRole("button", { name: "Request correction", exact: true }).click();
+  await expect(page.getByText("Verification review saved.", { exact: true })).toBeVisible();
+  expect(writes).toEqual([{ decision: "correction_required", expectedUpdatedAt: stamp, reason: "Please correct the registered legal name." }]);
+});
+
+test("intro plays once per tab while age confirmation stays independent", async ({ page }) => {
+  await setup(page, () => false);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/pricing");
+  await expect(page.getByRole("button", { name: "Skip", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(page.locator(".age-gated-content")).toHaveAttribute("aria-hidden", "false");
+  await page.reload();
+  await expect(page.locator(".age-gated-content")).toHaveAttribute("aria-hidden", "false");
+  await expect(page.getByRole("button", { name: "Skip", exact: true })).toHaveCount(0);
+  await page.addInitScript(() => localStorage.removeItem("bridge-age-confirmed-v1"));
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: "Before you enter Bridge" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Skip", exact: true })).toHaveCount(0);
+});
+
+test("unavailable tab storage safely skips intro and keeps age gate", async ({ page }) => {
+  await setup(page, () => false);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.addInitScript(() => { localStorage.removeItem("bridge-age-confirmed-v1"); Object.defineProperty(window, "sessionStorage", { get() { throw new Error("Storage unavailable"); } }); });
+  await page.goto("/pricing");
+  await expect(page.getByRole("dialog", { name: "Before you enter Bridge" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Skip", exact: true })).toHaveCount(0);
+});
+
+for (const ownOrganization of [true, false]) {
+  test(`Evergreen profile actions wait for authoritative membership then own organization is ${ownOrganization}`, async ({ page }) => {
+    const started = deferred(), release = deferred();
+    await setup(page, async (route, url) => {
+      if (url.pathname.endsWith("/action-context")) { started.resolve(); await release.promise; return route.fulfill({ json: { ownOrganization } }); }
+      if (url.pathname.endsWith("/directory/profiles/evergreen")) return route.fulfill({ json: { profile: { ...profile, slug: "evergreen", displayName: "Evergreen", organizationId: undefined } } });
+      if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: [], nextCursor: null } });
+      if (url.pathname === "/api/v1/saved-profiles") return route.fulfill({ json: { savedProfiles: [], pageInfo: { limit: 100, offset: 0, hasMore: false } } });
+      return false;
+    }, { getIdentity: () => ({ ...identity("owner", false), memberships: [identity("owner", false).memberships[ownOrganization ? 0 : 1]] }) });
+    await openPage(page, "/profile/evergreen"); await started.promise;
+    await expect(page.getByRole("heading", { name: "Evergreen", exact: true })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Checking profile actions" })).toBeVisible();
+    const actions = [page.getByRole("button", { name: "Save profile", exact: true }), page.getByRole("button", { name: "Report this profile", exact: true }), page.getByRole("heading", { name: "Contact Evergreen", exact: true })];
+    for (const action of actions) await expect(action).toHaveCount(0);
+    const response = page.waitForResponse((r) => r.url().endsWith("/evergreen/action-context"));
+    release.resolve(); await (await response).finished();
+    await expect(page.getByText("Checking profile actions…", { exact: true })).toHaveCount(0);
+    if (ownOrganization) { for (const action of actions) await expect(action).toHaveCount(0); }
+    else { for (const action of actions) await expect(action).toBeVisible(); }
+  });
+}
+
+test("successful organization creation refreshes shared memberships before client navigation to My Profile", async ({ page }) => {
+  let created = false, identityReads = 0;
+  const organization = { id: orgA, name: "First organization", organizationType: "brand", membership: { role: "owner", status: "active" } };
+  await setup(page, (route, url) => {
+    if (url.pathname === "/api/v1/organizations") {
+      if (route.request().method() === "POST") { created = true; return route.fulfill({ json: { organization } }); }
+      return route.fulfill({ json: { organizations: created ? [organization] : [] } });
+    }
+    if (url.pathname.endsWith("/members")) return route.fulfill({ json: { members: [] } });
+    if (url.pathname === "/api/v1/organization-invitations") return route.fulfill({ json: { invitations: [] } });
+    return editorRoute(route, url, null);
+  }, { getIdentity: () => { identityReads++; return { ...identity("owner", false), memberships: created ? [identity("owner", false).memberships[0]] : [] }; } });
+  await openPage(page, "/join/organization");
+  await page.getByRole("textbox", { name: "Organization name", exact: true }).fill("First organization");
+  await page.getByRole("combobox", { name: "Organization type", exact: true }).selectOption("brand");
+  await page.getByRole("button", { name: "Create organization", exact: true }).click();
+  await expect(page.getByText("Organization created. You are its owner.", { exact: true })).toBeVisible();
+  const navigation = page.waitForURL("**/my-profile");
+  await page.getByRole("link", { name: "Go to your profile", exact: true }).click(); await navigation;
+  await expect(page.getByRole("combobox", { name: "Organization (required)", exact: true })).toHaveValue(orgA);
+  expect(identityReads).toBe(2);
+});
+
+test("Sent cards omit unsupported private fields", async ({ page }) => {
+  await setup(page, (route, url) => url.pathname === "/api/v1/contact-requests/sent" ? route.fulfill({ json: { requests: [{ id: "sent-safe", status: "new", createdAt: stamp, target: { slug: "target", displayName: "Recipient business" } }], pageInfo: { limit: 20, offset: 0, hasMore: false } } }) : false);
+  await openPage(page, "/requests/sent");
+  await expect(page.getByRole("heading", { name: "Recipient business", exact: true })).toBeVisible();
+  await expect(page.getByText("Not provided", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Contact preference:", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("From:", { exact: true })).toHaveCount(0);
+});
+
+test("administrator announcement copy accurately describes publishing without a business profile", async ({ page }) => {
+  await setup(page, (route, url) => url.pathname === "/api/v1/admin/announcements" ? route.fulfill({ json: { announcements: [] } }) : false, { admin: true, getIdentity: () => ({ ...identity("owner", true), memberships: [] }) });
+  await openPage(page, "/admin/announcements");
+  await expect(page.getByText("Plain text. Authorized platform administrators can publish announcements without a business profile.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+});
+
+for (const failureKind of ["unavailable", "malformed"]) {
+  test(`EIN status ${failureKind} is a read failure rather than saved or verified`, async ({ page }) => {
+    let writes = 0;
+    await setup(page, (route, url) => {
+      if (url.pathname.endsWith("/ein/status")) return failureKind === "unavailable" ? failure(route, "EIN status unavailable") : route.fulfill({ json: {} });
+      if (url.pathname.endsWith("/ein")) { writes++; return route.fulfill({ json: {} }); }
+      return editorRoute(route, url, null);
+    });
+    await openPage(page, "/my-profile");
+    await expect(page.getByText(/Status: status unavailable/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save EIN", exact: true })).toBeDisabled();
+    expect(writes).toBe(0);
+  });
+}
+
+test("verified EIN confirmation prevents duplicate writes and locks business selection", async ({ page }) => {
+  const release = deferred(); let writes = 0, saved = false;
+  await setup(page, async (route, url) => {
+    if (url.pathname.endsWith("/ein/status")) return route.fulfill({ json: { businessId, einLastFour: "6789", status: saved ? "pending" : "verified", reviewNote: null } });
+    if (url.pathname.endsWith("/ein")) { writes++; await release.promise; saved = true; return route.fulfill({ json: { businessId, einLastFour: "6789" } }); }
+    return editorRoute(route, url);
+  });
+  await openPage(page, "/my-profile");
+  await expect(page.getByText(/Status: verified by Bridge/)).toBeVisible();
+  await page.getByLabel("EIN (required)", { exact: true }).fill("123456789");
+  await page.getByRole("button", { name: "Save EIN", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Replace verified EIN?" });
+  await expect(page.getByRole("combobox", { name: "Organization (required)", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Save and request verification", exact: true }).evaluate((button) => { button.click(); button.click(); });
+  await expect(page.getByRole("button", { name: "Saving�", exact: true })).toBeDisabled();
+  expect(writes).toBe(1); release.resolve();
+  await expect(page.getByText(/Status: EIN ending 6789 saved, waiting for Bridge to verify/)).toBeVisible();
+  expect(writes).toBe(1);
+});
+
+test("dashboard retains one primary main landmark", async ({ page }) => {
+  await setup(page, (route, url) => url.pathname.endsWith("/contact-requests") ? route.fulfill({ json: { requests: [], pageInfo: { limit: 20, offset: 0, hasMore: false } } }) : false);
+  await openPage(page, "/dashboard");
+  await expect(page.getByRole("heading", { name: "Keep your connections close", exact: true })).toBeVisible();
+  await expect(page.getByRole("main")).toHaveCount(1);
+});
+
+test("notification open marks read and selects its authorized organization", async ({ page }) => {
+  const reads = [], marked = [];
+  const notification = { id: "owner-result", type: "ein_correction_required", category: "verification", title: "EIN correction required", body: "Please correct the legal name.", resourceType: "verification_item", resourceId: "verification-item", createdAt: stamp, readAt: null, available: true, context: { organizationId: orgB, organizationName: "Second organization" }, action: { label: "View verification status", href: `/my-profile?organizationId=${orgB}` } };
+  await setup(page, (route, url) => {
+    if (url.pathname === "/api/v1/notifications/owner-result/read") { marked.push(route.request().method()); return route.fulfill({ json: {} }); }
+    reads.push(url.pathname); return editorRoute(route, url, null);
+  }, { notifications: [notification] });
+  await openPage(page, "/notifications");
+  await page.getByRole("button", { name: "View verification status", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/my-profile\\?organizationId=${orgB}`));
+  await expect(page.getByRole("combobox", { name: "Organization (required)", exact: true })).toHaveValue(orgB);
+  expect(marked).toEqual(["POST"]); expect(reads.some((path) => path.includes(orgA))).toBe(false);
+});
+
+test("unsaved protected drafts do not acquire Saved status", async ({ page }) => {
+  await setup(page, (route, url) => editorRoute(route, url, null));
+  await openPage(page, "/my-profile");
+  const contact = page.locator("form").filter({ has: page.getByRole("heading", { name: "Private business contact", exact: true }) });
+  await expect(contact).toContainText("Status: not provided");
+  await contact.getByLabel("Business email (required; not published)", { exact: true }).fill("draft@example.test");
+  await contact.getByLabel("Business phone (required; not published)", { exact: true }).fill("555-010-2000");
+  await expect(contact).toContainText("Status: not provided");
+});
+
+for (const failureKind of ["unavailable", "malformed"]) {
+  test(`Evergreen action-context ${failureKind} shows an error and retries without exposing self actions`, async ({ page }) => {
+    let recovered = false;
+    await setup(page, (route, url) => {
+      if (url.pathname.endsWith("/evergreen/action-context")) {
+        if (!recovered) return failureKind === "unavailable" ? failure(route, "Context unavailable") : route.fulfill({ json: {} });
+        return route.fulfill({ json: { ownOrganization: false } });
+      }
+      if (url.pathname.endsWith("/directory/profiles/evergreen")) return route.fulfill({ json: { profile: { ...profile, slug: "evergreen", displayName: "Evergreen", organizationId: undefined } } });
+      if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: [], nextCursor: null } });
+      if (url.pathname === "/api/v1/saved-profiles") return route.fulfill({ json: { savedProfiles: [], pageInfo: { limit: 100, offset: 0, hasMore: false } } });
+      return false;
+    }, { getIdentity: () => ({ ...identity("owner", false), memberships: [identity("owner", false).memberships[1]] }) });
+    await openPage(page, "/profile/evergreen");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveText("Profile actions could not be checked. Please try again.");
+    await expect(page.getByRole("button", { name: "Save profile", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Report this profile", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Contact Evergreen", exact: true })).toHaveCount(0);
+    recovered = true;
+    await page.getByRole("button", { name: "Retry profile actions", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Save profile", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Report this profile", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Contact Evergreen", exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+  });
+}

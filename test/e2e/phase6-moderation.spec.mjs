@@ -43,6 +43,7 @@ test("a member reports an update, an admin archives it, and it leaves the public
   const state = { me: member, archived: false, reports: [], decisions: [] };
   await setup(page, state, async (route, url) => {
     const method = route.request().method();
+    if (url.pathname === "/api/v1/directory/profiles/fixture-a/action-context") return route.fulfill({ json: { ownOrganization: false } });
     if (url.pathname === "/api/v1/directory/profiles/fixture-a") return route.fulfill({ json: profile });
     if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: state.archived ? [] : [post], nextCursor: null } });
     if (url.pathname === "/api/v1/flags" && method === "POST") { state.reports.push(route.request().postDataJSON()); return route.fulfill({ status: 201, json: { flag: { id: FLAG_ID, targetType: "post", status: "open", createdAt: "2026-10-22T12:00:00Z" } } }); }
@@ -100,6 +101,7 @@ test("a member reports an update, an admin archives it, and it leaves the public
 test("reports surface permission denied and duplicate states without a second submit", async ({ page }) => {
   let attempts = 0;
   await setup(page, { me: member }, async (route, url) => {
+    if (url.pathname === "/api/v1/directory/profiles/fixture-a/action-context") return route.fulfill({ json: { ownOrganization: false } });
     if (url.pathname === "/api/v1/directory/profiles/fixture-a") return route.fulfill({ json: profile });
     if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: [], nextCursor: null } });
     if (url.pathname === "/api/v1/flags") { attempts++; return route.fulfill({ status: attempts === 1 ? 403 : 409, json: { error: attempts === 1 ? "MODERATION_FORBIDDEN" : "MODERATION_DUPLICATE", message: "x" } }); }
@@ -159,6 +161,7 @@ test("the admin dashboard lists what needs attention and the user panel deactiva
 
 test("signed-out visitors get one sign-in link that returns to the profile", async ({ page }) => {
   await setup(page, { me: null }, async (route, url) => {
+    if (url.pathname === "/api/v1/directory/profiles/fixture-a/action-context") return route.fulfill({ json: { ownOrganization: false } });
     if (url.pathname === "/api/v1/directory/profiles/fixture-a") return route.fulfill({ json: profile });
     if (url.pathname === "/api/v1/posts") return route.fulfill({ json: { posts: [post], nextCursor: null } });
     return false;
