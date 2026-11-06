@@ -61,3 +61,10 @@ test("malformed organization responses fail closed before rendering", () => {
   for (const response of [null, {}, { organization: {} }, { organization: { ...organization, membership: null } }, { organization: { ...organization, id: "bad-id" } }, { organization: { ...organization, organizationType: "lab" } }]) assert.throws(() => parseOrganizationResponse(response), { code: "unavailable" });
   for (const response of [{}, { organizations: null }, { organizations: [{}] }]) assert.throws(() => parseOrganizationsResponse(response), { code: "unavailable" });
 });
+
+test("page-manager membership parses without granting organization administration", () => {
+  const pageManager = { ...organization, membership: { role: "page_manager", status: "active" } };
+  const parsed = parseOrganizationResponse({ organization: pageManager });
+  assert.equal(parsed.organization.membership.role, "page_manager");
+  assert.equal(canEditOrganization(parsed.organization), false);
+});

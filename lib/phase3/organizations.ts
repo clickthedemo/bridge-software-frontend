@@ -8,7 +8,7 @@ function object(value: unknown): Record<string, unknown> {
 function parseOrganization(value: unknown): OrganizationRecord {
   const org = object(value);
   const membership = object(org.membership);
-  if (typeof org.id !== "string" || typeof org.name !== "string" || ![null, "brand", "retailer", "dispensary"].includes(org.organizationType as string | null) || !["owner", "admin", "reviewer", "member"].includes(membership.role as string) || !["active", "invited", "suspended", "removed"].includes(membership.status as string)) throw new Phase3Error("unavailable", "The organization response could not be read. Refresh and try again.");
+  if (typeof org.id !== "string" || typeof org.name !== "string" || ![null, "brand", "retailer", "dispensary"].includes(org.organizationType as string | null) || !["owner", "admin", "reviewer", "member", "page_manager"].includes(membership.role as string) || !["active", "invited", "suspended", "removed"].includes(membership.status as string)) throw new Phase3Error("unavailable", "The organization response could not be read. Refresh and try again.");
   try { validateOrganizationId(org.id); } catch { throw new Phase3Error("unavailable", "The organization response contains an invalid organization identifier."); }
   return { id: org.id, name: org.name, organizationType: org.organizationType as OrganizationType | null, membership: { role: membership.role as OrganizationRecord["membership"]["role"], status: membership.status as OrganizationRecord["membership"]["status"] } };
 }

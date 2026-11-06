@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { canEditOrganization, getPhase3Client, isPhase3LiveApi, organizationTypeForRole, Phase3Error, type OrganizationRecord, type OrganizationType } from "@/lib/phase3";
 
 export function OrganizationForm() {
+  const { refreshMemberships: refreshIdentity } = useAuth();
   const client = useMemo(() => getPhase3Client(), []);
   const live = isPhase3LiveApi();
   const requestedRole = useSearchParams().get("role");
@@ -82,6 +84,7 @@ export function OrganizationForm() {
       const { organization } = selected ? await client.updateOrganization(selected.id, input) : await client.createOrganization(input);
       setOrganizations((current) => [...current.filter(({ id }) => id !== organization.id), organization]);
       show(organization);
+      await refreshIdentity();
       setMessage(live ? (selected ? "Organization details saved." : "Organization created. You are its owner.") : "Preview saved for this session. No real organization was created or changed.");
       setUncertainCreate(false);
     } catch (caught) {
@@ -94,7 +97,7 @@ export function OrganizationForm() {
   const continuation = `/join/organization${requestedRole ? `?role=${encodeURIComponent(requestedRole)}` : ""}`;
   return <section className="auth-card">
     {!live && <p className="boundary-note"><strong>Preview mode.</strong> Organizations are examples and changes last only for this session.</p>}
-    <p className="boundary-note">This step saves an organization name and type. Verification and supporting-document submission are not available in this flow.</p>
+    <p className="boundary-note">This step saves an organization name and type. Next, add the business EIN, private contact and address on your business profile page so Bridge can verify you.</p>
     {unsupported && <p className="boundary-note">Organization setup for <strong>{requestedRole}</strong> is pending support. Existing memberships remain available below. <Link className="text-link" href="/join">Change role</Link></p>}
     {loading && <p role="status">Loading organizations…</p>}
     {error && <p className="form-error" role="alert">{error}</p>}

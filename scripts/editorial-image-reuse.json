@@ -1,0 +1,127 @@
+{
+  "baseline": "6dfce8c660e943a0f4aaddeae537c3dab52b241a",
+  "note": "Preserves existing product visuals, not new client approval. An entry permits only this exact multiset of source locations; any new use requires explicit review.",
+  "uses": [
+    {
+      "path": "/bridge-editorial/community-oregon-edibles.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "components/PostPeek.tsx",
+        "components/SuitePeek.tsx"
+      ],
+      "reason": "The landing suite and post preview mirror the Oregon Community example; SuitePeek records Tori's four-photo preview request."
+    },
+    {
+      "path": "/bridge-editorial/community-michigan-retail.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "components/SuitePeek.tsx"
+      ],
+      "reason": "Landing Community preview mirrors the actual retail example."
+    },
+    {
+      "path": "/bridge-editorial/community-california-cultivation.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "components/SuitePeek.tsx"
+      ],
+      "reason": "Landing Community preview mirrors the actual cultivation example."
+    },
+    {
+      "path": "/bridge-editorial/community-massachusetts-meetup.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "components/SuitePeek.tsx"
+      ],
+      "reason": "Landing Community preview mirrors the actual meetup example."
+    },
+    {
+      "path": "/bridge-editorial/category-flower-genetics.webp",
+      "locations": [
+        "app/explore/explore-client.tsx",
+        "components/SuitePeek.tsx"
+      ],
+      "reason": "Landing Explore preview mirrors its actual category."
+    },
+    {
+      "path": "/bridge-editorial/category-prerolls-vapes.webp",
+      "locations": [
+        "app/explore/explore-client.tsx",
+        "components/SuitePeek.tsx"
+      ],
+      "reason": "Landing Explore preview mirrors its actual category."
+    },
+    {
+      "path": "/bridge-editorial/category-edibles-wellness.webp",
+      "locations": [
+        "app/explore/explore-client.tsx",
+        "components/SuitePeek.tsx"
+      ],
+      "reason": "Landing Explore preview mirrors its actual category."
+    },
+    {
+      "path": "/bridge-editorial/community-michigan-testing.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "app/verified/page.tsx"
+      ],
+      "reason": "Existing verification explainer references the lab compliance example."
+    },
+    {
+      "path": "/bridge-editorial/community-illinois-route-planning.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "app/verified/page.tsx"
+      ],
+      "reason": "Existing verification explainer references the geographic-service example."
+    },
+    {
+      "path": "/bridge-editorial/community-new-york-interview.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "app/verified/page.tsx"
+      ],
+      "reason": "Existing verification explainer references the professional introduction example."
+    },
+    {
+      "path": "/bridge-editorial/community-oregon-sample-kit.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "app/verified/page.tsx"
+      ],
+      "reason": "Existing verification explainer references the wholesale B2B sample example."
+    },
+    {
+      "path": "/bridge-editorial/create-promotion-studio.webp",
+      "locations": [
+        "app/community/community-client.tsx",
+        "app/create/page.tsx"
+      ],
+      "reason": "Existing promotional sample and composer illustrate the same promotion workflow."
+    },
+    {
+      "path": "/bridge-editorial/profile-protected-details.webp",
+      "locations": [
+        "app/my-profile/page.tsx",
+        "app/verified/page.tsx"
+      ],
+      "reason": "Existing verification explainer references the protected profile workflow."
+    },
+    {
+      "path": "/bridge-editorial/verified-licence-check.webp",
+      "locations": [
+        "app/verified/page.tsx",
+        "app/verified/page.tsx"
+      ],
+      "reason": "Existing verified hero and legal-identity detail use the same licence-document subject."
+    },
+    {
+      "path": "/bridge-editorial/profile-harbor-dispensary.webp",
+      "locations": [
+        "app/verified/page.tsx",
+        "lib/data.ts"
+      ],
+      "reason": "Existing verification explainer references the Harbor business example."
+    }
+  ]
+}

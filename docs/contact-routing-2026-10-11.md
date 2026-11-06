@@ -1,0 +1,11 @@
+# Contact routing and recipient inbox integration
+
+This slice implements Tori's October 6 contact routing intent against the existing owner/admin contact-routing GET/PUT contract and the isolated backend recipient patch. New requests use the assigned sales representative, then configured Bridge administrator, with owner fallback; this does not grant all administrators or sales representatives access to all requests.
+
+The inbox uses GET /api/v1/contact-requests/inbox-organizations. Only a 404 on that additive endpoint falls back to the signed-in user's active owner/admin organizations, with a visible limitation notice. A 403 or network error does not fall back. Backend authorization still governs every inbox read and status update.
+
+Routing uses GET/PUT /api/v1/organizations/:id/directory-profile/contact-routing and GET .../contact-routing/candidates. The bounded candidates response contains active same-organization sales representatives and only the already-configured valid Bridge administrator. The UI cannot enumerate or select a new global administrator. Failed routing/candidates reads expose no writable defaults. Candidate endpoint 404 shows existing assignments read-only. Selecting a new representative preserves the current administrator unless explicitly cleared; clearing both assignments uses owner fallback for new requests.
+
+Tests use synthetic data at https://bridge-api.example.test with 1440x1000 and 390x844 browsers. They cover assigned admin without business membership, no inbox from global role alone, failed discovery and retry, owner selection, preserve/clear payloads, failed reads/saves, organization switching and legacy404/forbidden403 handling. Existing profile and directory journeys remain in the suite.
+
+This is frontend implementation and synthetic contract validation. The live Render backend must deploy its additive discovery/candidates endpoints and recipient authorization patch before the new assigned-contact flow is available. A source or CI pass is not an authenticated live-API or client acceptance receipt. Browser plugin unavailable; repository Playwright workflow is used. No production data, credentials, email delivery or recipient changes are exercised by CI.

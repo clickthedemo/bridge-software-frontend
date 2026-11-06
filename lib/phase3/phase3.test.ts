@@ -318,3 +318,20 @@ test("http client maps malformed success JSON to a retryable unavailable error",
     );
   });
 });
+
+test("verification review sends the refreshed row version and preserves a clear conflict message", async () => {
+  let requestBody: unknown;
+  await withMockFetch(async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ error: "VERIFICATION_CONFLICT", message: "That verification item changed. The latest version has been reloaded; review it and try again." }), {
+      status: 409, headers: { "Content-Type": "application/json" }
+    });
+  }, async () => {
+    const client = new HttpPhase3Client("https://api.example.invalid");
+    await assert.rejects(
+      () => client.reviewVerificationItem("item-1", "verified", "2026-10-21T10:00:00.000Z"),
+      (error: unknown) => error instanceof Phase3Error && error.code === "conflict" && /latest version/.test(error.message)
+    );
+  });
+  assert.deepEqual(requestBody, { decision: "verified", reason: null, expectedUpdatedAt: "2026-10-21T10:00:00.000Z" });
+});

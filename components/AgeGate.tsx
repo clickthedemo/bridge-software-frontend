@@ -46,13 +46,14 @@ export function AgeGate({ children }: Readonly<{ children: ReactNode }>) {
       }
       confirmedRef.current = confirmed;
 
-      /* The cold open plays on every full page load, for returning visitors
-         too - it is the front door of the product, not a first-run tip. It
-         does not replay on client-side navigation, because this layout does
-         not remount. The one exception is reduced motion, since it sits in
-         front of a legal gate. */
+      // Claim before playback. If tab storage is unavailable, skip decoration.
+      let playIntro = false;
+      try {
+        playIntro = window.sessionStorage.getItem("bridge-intro-seen-v1") !== "seen";
+        window.sessionStorage.setItem("bridge-intro-seen-v1", "seen");
+      } catch { playIntro = false; }
       const quiet = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (quiet) {
+      if (quiet || !playIntro) {
         setState(confirmed ? "allowed" : "prompt");
         return;
       }

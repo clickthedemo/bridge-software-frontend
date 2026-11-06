@@ -1,5 +1,21 @@
 # Bridge decision log
 
+## Submission readiness recovery — 2026-10-25
+
+Directory submission requires a valid readiness response with `ready: true` and no missing fields. An unavailable or malformed response keeps submission disabled, including after a successful draft, EIN, contact or address save. Owners and organization admins can check readiness again without repeating the write. This uses the existing Greencubes endpoint; backend authorization, verification decisions and real EIN-provider acceptance remain authoritative.
+
+## Phase 6 reports and admin tools — 2026-10-22
+
+Report reasons default to spam, false or misleading claims, prohibited product or medical claim, harassment and other; the backend enum (bridge-software-backend `docs/phase-6-admin-moderation-api.md`) is the source and Tori can change the list with a forward migration. The reason has no preselected value, so a report always carries a reason the member chose. Only signed-in members with an active organization see the Report action, because `POST /flags` refuses everyone else. The admin dashboard shows only counts that need action plus published-content totals; the earlier static "Active roles", "Account status", "Portal access" and "Total users" cards were removed (Users stays one click away in the admin navigation).
+
+## AWS Amplify hosting kit prepared, not adopted — 2026-10-22
+
+`amplify.yml`, `customHttp.yml` and `docs/deploy-aws-amplify.md` are an unproven plan for hosting this site in Bridge's own AWS account. Amplify's docs list managed SSR for Next.js 12 to 15 and this app is on 16, so a trial build must pass first; the fallback is a container on ECS Express Mode. Netlify stays the live host and `netlify.toml` is unchanged. D-06 below (is AWS a hard requirement) is still open.
+
+## Phase Four source recovery — 2026-10-11
+
+Recovered Miraj's vendor frontend at 6a40eb352b3ea6296bce871296216cc147a89aa0 and backend contract at 3892ac3cb407c1aa101b464356acc3440dea1135. The integration patch aligns profile roles/revisions/links and public Directory filters with Tori's October 6 workbook, preserving Connected styling. Backend authorization remains authoritative; recipient-scoped inbox authorization, real RLS tests and deployment bindings remain acceptance gaps. See `docs/m4-recovery-2026-10-11.md`. This records implementation scope, not a completed deployment or client QA receipt.
+
 ## Adult entry requirement restored — 2026-08-21
 
 | Item | Recorded decision | Evidence boundary |

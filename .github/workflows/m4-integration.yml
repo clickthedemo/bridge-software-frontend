@@ -1,0 +1,64 @@
+name: Bridge M4 integration checks
+on:
+  pull_request:
+    branches: [development, production, feature/m4-source-recovery-20261011]
+permissions:
+  contents: read
+concurrency:
+  group: m4-integration-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+      - run: node --test scripts/build-info.test.mjs
+      - run: npm run test:integration
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_BRIDGE_API_BASE: https://bridge-api.example.test
+      - name: Install temporary browser test tooling
+        run: npm install --no-save --package-lock=false @playwright/test@1.56.1
+      - run: npx --no-install playwright install --with-deps chromium
+      - name: Run synthetic desktop and mobile journeys
+        run: npx --no-install playwright test
+      - name: Report browser failure context
+        if: failure()
+        run: |
+          python - <<'PY'
+          import glob
+          for path in glob.glob("/tmp/bridge-m4-test-results/**/error-context.md", recursive=True):
+              print(path)
+              print(open(path).read()[:9000])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        # Evidence upload must not fail the gate: a full account artifact quota (Oct 22) failed green test runs.
+        continue-on-error: true
+        with:
+          name: bridge-m4-browser-evidence
+          retention-days: 7
+          path: |
+            /tmp/bridge-m4-evidence
+            /tmp/bridge-m4-test-results
+          if-no-files-found: ignore
+  image-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test scripts/editorial-image-usage.test.mjs
+      - run: npm run test:images

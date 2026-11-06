@@ -7,6 +7,7 @@ import type { CurrentUser, OrganizationMembership } from "@/lib/phase3";
 type AuthContextValue = {
   status: "loading" | "authenticated" | "unauthenticated" | "unavailable";
   refresh(): Promise<void>;
+  refreshMemberships(): Promise<void>;
   user: CurrentUser | null;
   memberships: OrganizationMembership[];
   isAdmin: boolean;
@@ -61,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null); setMemberships([]); setStatus("unauthenticated");
   }, [client]);
   const value = useMemo(() => ({ status, user, memberships,
-    isAdmin: user?.platformRoles.includes("admin") ?? false, refresh, login, logout }), [status, user, memberships, refresh, login, logout]);
+    isAdmin: user?.platformRoles.includes("admin") ?? false, refresh, refreshMemberships: checkSession, login, logout }), [status, user, memberships, refresh, checkSession, login, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

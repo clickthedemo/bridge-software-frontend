@@ -13,3 +13,8 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+[[headers]]
+  for = "/build-info.json"
+  [headers.values]
+    Cache-Control = "no-store"

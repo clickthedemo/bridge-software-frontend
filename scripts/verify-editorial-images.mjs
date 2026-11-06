@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { editorialUsageFailures } from "./editorial-image-usage.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assetDirectory = path.join(root, "public", "bridge-editorial");
@@ -25,7 +26,7 @@ for (const file of (await Promise.all(sourceRoots.map(sourceFiles))).flat()) {
   for (const match of source.matchAll(/\/bridge-editorial\/([a-z0-9-]+\.webp)/g)) {
     const publicPath = `/bridge-editorial/${match[1]}`;
     const locations = usage.get(publicPath) ?? [];
-    locations.push(path.relative(root, file));
+    locations.push(path.relative(root, file).replaceAll(path.sep, "/"));
     usage.set(publicPath, locations);
   }
   if (/bridge-industry-(products|networking)\.png|bridge-cultivation-lab\.png/.test(source)) {
@@ -33,9 +34,8 @@ for (const file of (await Promise.all(sourceRoots.map(sourceFiles))).flat()) {
   }
 }
 
-for (const [publicPath, locations] of usage) {
-  if (locations.length !== 1) failures.push(`${publicPath} is assigned ${locations.length} times: ${locations.join(", ")}`);
-}
+const reviewedReuse = JSON.parse(await readFile(path.join(root, "scripts", "editorial-image-reuse.json"), "utf8"));
+failures.push(...editorialUsageFailures(usage, reviewedReuse.uses));
 
 const files = (await readdir(assetDirectory)).filter((file) => file.endsWith(".webp")).sort();
 const referencedFiles = [...usage.keys()].map((publicPath) => path.basename(publicPath)).sort();
@@ -89,6 +89,7 @@ const report = {
   editorialAssets: files.length,
   assignedEditorialPaths: usage.size,
   uniqueBinaryHashes: hashToFiles.size,
+  reviewedEditorialReuse: reviewedReuse.uses.length,
   nationwideOptions: states.length,
   communitySamplePosts: communityPostImages.length,
   intentionalReuseExceptions: ["/bridge-mark.svg", "/textures/bridge-film-grain.webp"],

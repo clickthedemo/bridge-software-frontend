@@ -1,17 +1,18 @@
-import { VerificationQueue } from "./verification-client";
+import { BusinessLicenseQueue, VerificationQueue } from "./verification-client";
 
 export default function VerificationPage() {
   return (
     <section>
-      <div className="dashboard-heading">
+      <div className="admin-page-heading">
         <div>
           <p className="eyebrow">Admin workspace</p>
           <h1>Verification queue</h1>
-          <p className="lede">Review business identity, licenses, and profile readiness.</p>
+          <p>Review business identity, licences, and profile readiness.</p>
         </div>
         <span className="status-chip pending">Live queue</span>
       </div>
       <VerificationQueue />
+      <BusinessLicenseQueue />
     </section>
   );
 }
